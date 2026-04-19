@@ -1,14 +1,10 @@
-# 🏛️ Architecture and Operations: PiRC-236
+# 🏛️ Architecture Blueprint: PiRC-236
+## 📊 Assimilation Report
+Constructed autonomously by the **V7 Intelligent Engine**, based on deep data scans from `Ze0ro99/PiRC`.
 
-## 📌 Executive Summary
-**Standard:** PiRC-236
-**Analytical Domain:** Identity & Governance
-**Context Readout:** Implementation for PiRC-236 standard.
+- **Assimilated Domain:** Real-World Asset (RWA) & Hardware Relay
+- **Context:** *"Data assimilated from Ze0ro99/PiRC for PiRC-236."*
 
-## 🛠️ Operational Pipeline
-This architecture has been autonomously structured to meet the precise requirements extracted from the Ze0ro99/PiRC repository documentation.
-
-1. **`src/lib.rs`**: The core Soroban smart contract logic tailored for `Identity & Governance`. 
-- **`physical_env/`**: Native hardware bridging scripts based on the RWA analysis of this specific standard.
-
-*This ecosystem node ensures strict compliance with PiRC sovereign standards while maintaining modular isolation.*
+## 📁 Repository Structure
+- **`src/lib.rs`**: Soroban logic programmed using specifications from the primary documentation. 
+- **`physical_relays/`**: Associated Python scripts for parsing tangible NFC/QR payloads.
