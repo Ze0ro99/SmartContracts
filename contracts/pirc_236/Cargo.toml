@@ -1,5 +1,5 @@
 [package]
-name = "pirc-236-contract"
+name = "pirc-236-core"
 version = "1.0.0"
 edition = "2021"
 [dependencies]
