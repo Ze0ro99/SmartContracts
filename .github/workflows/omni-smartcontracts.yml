@@ -42,8 +42,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  RUST_VERSION: '1.85'
-  SOROBAN_SDK_VERSION: '22.0.0'
+  RUST_VERSION: '1.88'
+  SOROBAN_SDK_VERSION: '23.0.0'
   ARTIFACTS_RETENTION_DAYS: 30
   CARGO_TERM_COLOR: always
 
