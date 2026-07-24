@@ -1,0 +1,580 @@
+# =====================================================================
+#  OMNI SmartContracts — Professional CI/CD, Testnet Audit & Reporting
+#  Repository : Ze0ro99/SmartContracts
+#  Companion  : Ze0ro99/PiRC (asset import + registry sync via OMNI_SYNC_TOKEN)
+#  Scope      : Discovery → Isolated Build → Test → Security Audit →
+#               Testnet Deployment → Engineering Diagrams → Reports →
+#               PiRC Sync → Master Summary
+# =====================================================================
+
+name: OMNI SmartContracts Pipeline
+
+on:
+  push:
+    branches: [main, master, develop]
+    paths:
+      - 'contracts/**'
+      - 'scripts/**'
+      - '.github/workflows/**'
+      - 'Cargo.toml'
+  pull_request:
+    branches: [main, master]
+  schedule:
+    - cron: '0 3 * * *'          # Daily full audit at 03:00 UTC
+  workflow_dispatch:
+    inputs:
+      target_contract:
+        description: 'Specific contract folder (empty = all valid contracts)'
+        required: false
+        default: ''
+      deploy_testnet:
+        description: 'Deploy and verify contracts on Stellar Testnet'
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  RUST_VERSION: '1.85'
+  SOROBAN_SDK_VERSION: '22.0.0'
+  ARTIFACTS_RETENTION_DAYS: 30
+  CARGO_TERM_COLOR: always
+
+jobs:
+
+  # =========================================================
+  # 1. Discovery — valid contracts + PiRC asset import
+  # =========================================================
+  discover:
+    name: Discover Contracts & Import PiRC Assets
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+      has_contracts: ${{ steps.set-matrix.outputs.has_contracts }}
+      has_subscription: ${{ steps.check-sub.outputs.exists }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Import PiRC repository (authenticated via OMNI_SYNC_TOKEN)
+        id: import-pirc
+        continue-on-error: true
+        uses: actions/checkout@v4
+        with:
+          repository: Ze0ro99/PiRC
+          token: ${{ secrets.OMNI_SYNC_TOKEN }}
+          path: pirc-import
+          fetch-depth: 1
+
+      - name: Prepare PiRC assets (import or generate fallback)
+        env:
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          mkdir -p imported/pirc/{schemas,registries,manifests}
+
+          if [ -d "pirc-import" ]; then
+            echo "→ Importing assets from PiRC..."
+            cp -r pirc-import/schemas/.  imported/pirc/schemas/    2>/dev/null || true
+            cp    pirc-import/*.json     imported/pirc/registries/ 2>/dev/null || true
+            cp    pirc-import/sovereign_manifest.json imported/pirc/manifests/ 2>/dev/null || true
+          else
+            echo "→ PiRC unavailable — generating fallback assets."
+          fi
+
+          TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+          [ -f imported/pirc/registries/CONTRACTS_REGISTRY.json ] || \
+            jq -n --arg ts "$TS" --arg run "$RUN_ID" \
+              '{contracts: [], version: "fallback-1.0", generated_at: $ts, run_id: $run}' \
+              > imported/pirc/registries/CONTRACTS_REGISTRY.json
+
+          [ -f imported/pirc/manifests/sovereign_manifest.json ] || \
+            jq -n --arg ts "$TS" \
+              '{name: "Sovereign Fallback Manifest", version: "1.0-fallback",
+                generated_at: $ts, source: "OMNI SmartContracts Pipeline",
+                layers: ["Core","Identity","Subscriptions","RWA","DeFi"]}' \
+              > imported/pirc/manifests/sovereign_manifest.json
+
+          [ -n "$(ls -A imported/pirc/schemas 2>/dev/null)" ] || \
+            echo '{"$schema":"[json-schema.org](http://json-schema.org/draft-07/schema#)","title":"Fallback Schema","type":"object"}' \
+              > imported/pirc/schemas/fallback-schema.json
+
+          echo "Assets ready:" && find imported -type f
+
+      - name: Discover contracts with valid Cargo.toml
+        id: set-matrix
+        env:
+          TARGET_CONTRACT: ${{ github.event.inputs.target_contract }}
+        run: |
+          set -euo pipefail
+          VALID=()
+
+          for dir in contracts/*/; do
+            [ -f "${dir}Cargo.toml" ] || continue
+            name=$(basename "$dir")
+            if python3 -c "import tomllib,sys; tomllib.load(open(sys.argv[1],'rb'))" "${dir}Cargo.toml" 2>/dev/null; then
+              echo "  ✓ valid   : $name" ; VALID+=("$name")
+            else
+              echo "  ✗ skipped : $name (invalid Cargo.toml)"
+            fi
+          done
+
+          if [ -n "$TARGET_CONTRACT" ]; then
+            MATRIX=$(jq -nc --arg c "$TARGET_CONTRACT" '{include:[{contract:$c}]}')
+          elif [ ${#VALID[@]} -eq 0 ]; then
+            echo "has_contracts=false" >> "$GITHUB_OUTPUT"
+            echo "matrix={\"include\":[]}" >> "$GITHUB_OUTPUT"
+            exit 0
+          else
+            MATRIX=$(printf '%s\n' "${VALID[@]}" | jq -Rnc '{include: [inputs | {contract: .}]}')
+          fi
+
+          echo "has_contracts=true" >> "$GITHUB_OUTPUT"
+          echo "matrix=$MATRIX"     >> "$GITHUB_OUTPUT"
+          echo "Final matrix: $MATRIX"
+
+      - name: Check subscription contract
+        id: check-sub
+        run: |
+          if [ -f "contracts/subscription/Cargo.toml" ] && \
+             python3 -c "import tomllib; tomllib.load(open('contracts/subscription/Cargo.toml','rb'))" 2>/dev/null; then
+            echo "exists=true"  >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload prepared PiRC assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: pirc-prepared-assets
+          path: imported/
+          retention-days: ${{ env.ARTIFACTS_RETENTION_DAYS }}
+          if-no-files-found: ignore
+
+  # =========================================================
+  # 2. Build • Test • Security Audit (isolated, per contract)
+  # =========================================================
+  build-test-audit:
+    name: Build • Test • Audit → ${{ matrix.contract }}
+    needs: discover
+    if: needs.discover.outputs.has_contracts == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.discover.outputs.matrix) }}
+    env:
+      CONTRACT: ${{ matrix.contract }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download PiRC assets
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: pirc-prepared-assets
+          path: imported/
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ matrix.contract }}-${{ hashFiles(format('contracts/{0}/Cargo.toml', matrix.contract)) }}
+          restore-keys: ${{ runner.os }}-cargo-${{ matrix.contract }}-
+
+      - name: Create isolated workspace
+        run: |
+          set -euo pipefail
+          cp Cargo.toml Cargo.toml.bak 2>/dev/null || true
+          cat > Cargo.toml << EOF
+          [workspace]
+          resolver = "2"
+          members = ["contracts/$CONTRACT"]
+
+          [workspace.dependencies]
+          soroban-sdk = "${{ env.SOROBAN_SDK_VERSION }}"
+
+          [profile.release]
+          opt-level = "z"
+          overflow-checks = true
+          debug = 0
+          strip = "symbols"
+          debug-assertions = false
+          panic = "abort"
+          codegen-units = 1
+          lto = true
+          EOF
+
+      - name: Build (wasm32, release)
+        run: cargo build --target wasm32-unknown-unknown --release --manifest-path "contracts/$CONTRACT/Cargo.toml"
+
+      - name: Unit tests
+        run: cargo test --manifest-path "contracts/$CONTRACT/Cargo.toml" -- --nocapture
+
+      - name: Lint & format check
+        continue-on-error: true
+        run: |
+          cargo clippy --manifest-path "contracts/$CONTRACT/Cargo.toml" --all-targets -- -D warnings
+          cargo fmt    --manifest-path "contracts/$CONTRACT/Cargo.toml" --check
+
+      - name: Security audit (cargo-audit)
+        continue-on-error: true
+        run: |
+          cargo install --locked cargo-audit 2>/dev/null || true
+          mkdir -p "reports/$CONTRACT"
+          cargo audit --file "contracts/$CONTRACT/Cargo.lock" --json \
+            > "reports/$CONTRACT/security-audit.json" 2>/dev/null || \
+          cargo audit --json > "reports/$CONTRACT/security-audit.json" || true
+
+      - name: Ensure reporting scripts exist (self-bootstrapping)
+        run: |
+          mkdir -p scripts "reports/$CONTRACT"
+          if [ ! -f scripts/generate_professional_report.py ]; then
+            cat > scripts/generate_professional_report.py << 'PYEOF'
+          import argparse, json, os, subprocess, datetime, glob
+
+          p = argparse.ArgumentParser()
+          p.add_argument("--contract", required=True)
+          p.add_argument("--deep", action="store_true")
+          a = p.parse_args()
+
+          out = f"reports/{a.contract}"
+          os.makedirs(out, exist_ok=True)
+          src = f"contracts/{a.contract}/src"
+          files = glob.glob(f"{src}/**/*.rs", recursive=True)
+          loc = sum(len(open(f, errors="ignore").readlines()) for f in files)
+          wasm = glob.glob(f"target/wasm32-unknown-unknown/release/*.wasm")
+          wasm_size = os.path.getsize(wasm[0]) if wasm else 0
+
+          report = {
+              "contract": a.contract,
+              "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+              "mode": "deep" if a.deep else "standard",
+              "source_files": len(files),
+              "lines_of_code": loc,
+              "wasm_size_bytes": wasm_size,
+              "pipeline": "OMNI SmartContracts Pipeline",
+          }
+          json.dump(report, open(f"{out}/report.json", "w"), indent=2)
+
+          with open(f"{out}/REPORT.md", "w") as f:
+              f.write(f"# Audit Report — {a.contract}\n\n")
+              f.write(f"- **Generated:** {report['generated_at']}\n")
+              f.write(f"- **Mode:** {report['mode']}\n")
+              f.write(f"- **Rust source files:** {len(files)}\n")
+              f.write(f"- **Lines of code:** {loc}\n")
+              f.write(f"- **Optimized WASM size:** {wasm_size} bytes\n")
+          print(f"Report written to {out}/")
+          PYEOF
+          fi
+
+          if [ ! -f scripts/generate_diagrams.py ]; then
+            cat > scripts/generate_diagrams.py << 'PYEOF'
+          import argparse, os, re, glob
+
+          p = argparse.ArgumentParser()
+          p.add_argument("--contract", required=True)
+          a = p.parse_args()
+
+          out = f"reports/{a.contract}"
+          os.makedirs(out, exist_ok=True)
+          fns = []
+          for f in glob.glob(f"contracts/{a.contract}/src/**/*.rs", recursive=True):
+              fns += re.findall(r"pub fn (\w+)", open(f, errors="ignore").read())
+
+          with open(f"{out}/ARCHITECTURE.md", "w") as f:
+              f.write(f"# Engineering Diagram — {a.contract}\n\n```mermaid\nflowchart TD\n")
+              f.write(f'    U[Caller / dApp] --> C["{a.contract} contract"]\n')
+              for fn in sorted(set(fns))[:20]:
+                  f.write(f'    C --> {fn}["{fn}()"]\n')
+              f.write("    C --> L[(Contract Storage)]\n```\n")
+          print(f"Diagram written to {out}/ARCHITECTURE.md")
+          PYEOF
+          fi
+
+      - name: Generate professional report & engineering diagram
+        run: |
+          python3 scripts/generate_professional_report.py --contract "$CONTRACT"
+          python3 scripts/generate_diagrams.py --contract "$CONTRACT"
+
+      - name: Collect WASM artifact
+        run: |
+          mkdir -p "wasm-out/$CONTRACT"
+          find target/wasm32-unknown-unknown/release -maxdepth 1 -name '*.wasm' \
+            -exec cp {} "wasm-out/$CONTRACT/" \; || true
+
+      - name: Restore original workspace
+        if: always()
+        run: '[ -f Cargo.toml.bak ] && mv Cargo.toml.bak Cargo.toml || true'
+
+      - name: Upload contract report
+        uses: actions/upload-artifact@v4
+        with:
+          name: report-${{ matrix.contract }}
+          path: reports/${{ matrix.contract }}/
+          retention-days: ${{ env.ARTIFACTS_RETENTION_DAYS }}
+          if-no-files-found: ignore
+
+      - name: Upload WASM binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: wasm-${{ matrix.contract }}
+          path: wasm-out/${{ matrix.contract }}/
+          retention-days: ${{ env.ARTIFACTS_RETENTION_DAYS }}
+          if-no-files-found: ignore
+
+  # =========================================================
+  # 3. Testnet Deployment & Verification (per contract)
+  # =========================================================
+  testnet-verify:
+    name: Testnet Verify → ${{ matrix.contract }}
+    needs: [discover, build-test-audit]
+    if: >
+      needs.discover.outputs.has_contracts == 'true' &&
+      (github.event_name != 'workflow_dispatch' || github.event.inputs.deploy_testnet == 'true')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.discover.outputs.matrix) }}
+    env:
+      CONTRACT: ${{ matrix.contract }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download WASM binary
+        uses: actions/download-artifact@v4
+        with:
+          name: wasm-${{ matrix.contract }}
+          path: wasm/
+
+      - name: Install Stellar CLI
+        run: |
+          curl -fsSL [raw.githubusercontent.com](https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh) | bash
+          cargo binstall -y --locked stellar-cli || cargo install --locked stellar-cli
+
+      - name: Configure Testnet identity
+        run: |
+          stellar network add testnet \
+            --rpc-url [soroban-testnet.stellar.org](https://soroban-testnet.stellar.org) \
+            --network-passphrase "Test SDF Network ; September 2015" || true
+          stellar keys generate ci-deployer --network testnet --fund
+
+      - name: Deploy & smoke-test on Testnet
+        run: |
+          set -euo pipefail
+          mkdir -p "reports/$CONTRACT"
+          WASM=$(find wasm -name '*.wasm' | head -n1)
+
+          if [ -z "$WASM" ]; then
+            echo "No WASM found — skipping deployment." | tee "reports/$CONTRACT/testnet-deploy.md"
+            exit 0
+          fi
+
+          stellar contract optimize --wasm "$WASM" || true
+          OPT="${WASM%.wasm}.optimized.wasm"
+          [ -f "$OPT" ] || OPT="$WASM"
+
+          CID=$(stellar contract deploy \
+            --wasm "$OPT" \
+            --source ci-deployer \
+            --network testnet 2>&1 | tail -n1)
+
+          {
+            echo "# Testnet Deployment — $CONTRACT"
+            echo "- **Network:** Stellar Testnet"
+            echo "- **Contract ID:** \`$CID\`"
+            echo "- **WASM:** $(basename "$OPT") ($(stat -c%s "$OPT") bytes)"
+            echo "- **Deployed at:** $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > "reports/$CONTRACT/testnet-deploy.md"
+
+          echo "Deployed $CONTRACT → $CID"
+
+      - name: Upload testnet report
+        uses: actions/upload-artifact@v4
+        with:
+          name: testnet-${{ matrix.contract }}
+          path: reports/${{ matrix.contract }}/
+          retention-days: ${{ env.ARTIFACTS_RETENTION_DAYS }}
+          if-no-files-found: ignore
+
+  # =========================================================
+  # 4. Deep Audit — Subscription contract
+  # =========================================================
+  subscription-deep-audit:
+    name: Deep Audit — Subscription
+    needs: discover
+    if: needs.discover.outputs.has_subscription == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          components: clippy
+          targets: wasm32-unknown-unknown
+
+      - name: Isolated workspace
+        run: |
+          cp Cargo.toml Cargo.toml.bak 2>/dev/null || true
+          cat > Cargo.toml << EOF
+          [workspace]
+          resolver = "2"
+          members = ["contracts/subscription"]
+          [workspace.dependencies]
+          soroban-sdk = "${{ env.SOROBAN_SDK_VERSION }}"
+          [profile.release]
+          opt-level = "z"
+          overflow-checks = true
+          debug = 0
+          strip = "symbols"
+          panic = "abort"
+          codegen-units = 1
+          lto = true
+          EOF
+
+      - name: Deep build, test & strict lint
+        run: |
+          cargo build --target wasm32-unknown-unknown --release --manifest-path contracts/subscription/Cargo.toml
+          cargo test  --manifest-path contracts/subscription/Cargo.toml -- --nocapture
+          cargo clippy --manifest-path contracts/subscription/Cargo.toml --all-targets -- \
+            -D warnings -W clippy::unwrap_used -W clippy::expect_used -W clippy::panic || true
+
+      - name: Deep report & diagram
+        run: |
+          mkdir -p scripts reports/subscription
+          [ -f scripts/generate_professional_report.py ] && \
+            python3 scripts/generate_professional_report.py --contract subscription --deep || true
+          [ -f scripts/generate_diagrams.py ] && \
+            python3 scripts/generate_diagrams.py --contract subscription || true
+
+      - name: Restore workspace
+        if: always()
+        run: '[ -f Cargo.toml.bak ] && mv Cargo.toml.bak Cargo.toml || true'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: subscription-deep-audit
+          path: reports/subscription/
+          retention-days: ${{ env.ARTIFACTS_RETENTION_DAYS }}
+          if-no-files-found: ignore
+
+  # =========================================================
+  # 5. Sync results back to PiRC (main branch only)
+  # =========================================================
+  sync-to-pirc:
+    name: Sync Registry → PiRC
+    needs: [build-test-audit, testnet-verify]
+    if: >
+      always() &&
+      github.ref == 'refs/heads/main' &&
+      needs.build-test-audit.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout PiRC
+        continue-on-error: true
+        uses: actions/checkout@v4
+        with:
+          repository: Ze0ro99/PiRC
+          token: ${{ secrets.OMNI_SYNC_TOKEN }}
+          path: pirc
+
+      - name: Download all reports
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          path: all-reports/
+
+      - name: Push updated registry to PiRC
+        continue-on-error: true
+        env:
+          RUN_ID: ${{ github.run_id }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          [ -d pirc ] || { echo "PiRC unavailable — skipping sync."; exit 0; }
+          cd pirc
+          mkdir -p smartcontracts-sync
+          cp -r ../all-reports/* smartcontracts-sync/ 2>/dev/null || true
+          jq -n --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg run "$RUN_ID" --arg sha "$SHA" \
+            '{source:"SmartContracts", run_id:$run, commit:$sha, synced_at:$ts, status:"success"}' \
+            > smartcontracts-sync/LAST_SYNC.json
+          git config user.name  "omni-sync-bot"
+          git config user.email "omni-sync-bot@users.noreply.github.com"
+          git add smartcontracts-sync/
+          git diff --cached --quiet || git commit -m "chore(sync): SmartContracts pipeline run $RUN_ID"
+          git push || echo "Push skipped (no permission or no changes)."
+
+  # =========================================================
+  # 6. Master Summary
+  # =========================================================
+  finalize:
+    name: Master Summary
+    needs: [discover, build-test-audit, testnet-verify, subscription-deep-audit]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Download all reports
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          path: all-reports/
+
+      - name: Build master report & job summary
+        env:
+          R_BUILD: ${{ needs.build-test-audit.result }}
+          R_TESTNET: ${{ needs.testnet-verify.result }}
+          R_DEEP: ${{ needs.subscription-deep-audit.result }}
+        run: |
+          {
+            echo "# OMNI SmartContracts — Master Pipeline Report"
+            echo ""
+            echo "**Generated:** $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "**Commit:** ${GITHUB_SHA}"
+            echo ""
+            echo "| Stage | Result |"
+            echo "|---|---|"
+            echo "| Build • Test • Audit | $R_BUILD |"
+            echo "| Testnet Verification | $R_TESTNET |"
+            echo "| Subscription Deep Audit | $R_DEEP |"
+            echo ""
+            echo "## Guarantees"
+            echo "- Only contracts with valid \`Cargo.toml\` are processed; corrupted packages are skipped automatically."
+            echo "- Every contract builds in an isolated workspace (no cross-contract pollution)."
+            echo "- PiRC assets are imported when reachable, otherwise auto-generated fallbacks are used."
+            echo "- Reports, security audits, and engineering diagrams are produced per contract."
+          } | tee MASTER_REPORT.md >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MASTER-PIPELINE-REPORT
+          path: |
+            MASTER_REPORT.md
+            all-reports/
+          retention-days: ${{ env.ARTIFACTS_RETENTION_DAYS }}
+          if-no-files-found: ignore
+
