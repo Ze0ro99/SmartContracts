@@ -1,7 +1,7 @@
-# 🏛️ Architectural Blueprint: PiRC-236
+# 🏛️ Architectural Blueprint: PiRC-47
 
 ## 📌 Ecosystem Node Overview
-This directory contains the isolated, production-grade logic for **PiRC-236**, bridging the digital Pi Network ledger with tangible, real-world interactions.
+This directory contains the isolated, production-grade logic for **PiRC-47**, bridging the digital Pi Network ledger with tangible, real-world interactions.
 
 ## 🛠️ Composition
 1. **`src/lib.rs`**: The core Soroban smart contract logic ensuring ZK-proof compatibility.
