@@ -1193,7 +1193,7 @@ dependencies = [
 
 [[package]]
 name = "soroban-env-host"
-version = "22.1.3"
+version = "26.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "66e8b03a4191d485eab03f066336112b2a50541a7553179553dc838b986b94dd"
 dependencies = [
