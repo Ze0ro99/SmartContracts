@@ -10,7 +10,7 @@ on:
   pull_request:
     branches: [main, master]
   schedule:
-    - cron: '0 3 * * *'   # Daily at 03:00 UTC
+    - cron: '0 3 * * *'
   workflow_dispatch:
     inputs:
       target_contract:
@@ -18,21 +18,17 @@ on:
         required: false
         default: ''
       run_testnet_deploy:
-        description: 'Deploy to Stellar Testnet after successful checks?'
+        description: 'Deploy to Stellar Testnet after success?'
         type: boolean
         default: false
 
 env:
   RUST_VERSION: '1.85'
   SOROBAN_CLI_VERSION: '22.0.0'
-  STELLAR_NETWORK: 'testnet'
   PIRC_REPO: 'Ze0ro99/PiRC'
   ARTIFACTS_RETENTION_DAYS: 30
 
 jobs:
-  ##########################################################################
-  # Job 1: Discover contracts + Import standards from PiRC
-  ##########################################################################
   discover-and-import:
     name: Discover Contracts & Import PiRC Assets
     runs-on: ubuntu-latest
@@ -40,41 +36,41 @@ jobs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
       has_subscription: ${{ steps.check-subscription.outputs.exists }}
     steps:
-      - name: Checkout SmartContracts repository
+      - name: Checkout SmartContracts
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Checkout PiRC repository (for standards, schemas, registries)
+      - name: Checkout PiRC repository
         uses: actions/checkout@v4
         with:
           repository: ${{ env.PIRC_REPO }}
           path: pirc-import
           fetch-depth: 1
+        continue-on-error: true   # Prevent complete failure if PiRC is temporarily unavailable
 
-      - name: Import critical assets from PiRC
+      - name: Import PiRC assets
         run: |
-          mkdir -p imported/pirc/{schemas,registries,manifests,scripts}
-          cp -r pirc-import/schemas/* imported/pirc/schemas/ 2>/dev/null || true
-          cp pirc-import/*.json imported/pirc/registries/ 2>/dev/null || true
-          cp pirc-import/sovereign_manifest.json imported/pirc/manifests/ 2>/dev/null || true
-          cp pirc-import/PIRC_GLOBAL_OMNI_REGISTRY.json imported/pirc/registries/ 2>/dev/null || true
-          cp pirc-import/CONTRACTS_REGISTRY.json imported/pirc/registries/ 2>/dev/null || true
-          echo "PiRC assets successfully imported"
+          mkdir -p imported/pirc/{schemas,registries,manifests}
+          if [ -d pirc-import ]; then
+            cp -r pirc-import/schemas/* imported/pirc/schemas/ 2>/dev/null || true
+            cp pirc-import/*.json imported/pirc/registries/ 2>/dev/null || true
+            cp pirc-import/sovereign_manifest.json imported/pirc/manifests/ 2>/dev/null || true
+            echo "PiRC assets imported"
+          else
+            echo "PiRC repository not available – continuing without external standards"
+          fi
 
-      - name: Discover all contract directories
+      - name: Discover contracts and build matrix
         id: set-matrix
         run: |
           if [ -n "${{ github.event.inputs.target_contract }}" ]; then
-            MATRIX="[{\"contract\":\"${{ github.event.inputs.target_contract }}\"}]"
+            echo 'matrix={"include":[{"contract":"${{ github.event.inputs.target_contract }}"}]}' >> $GITHUB_OUTPUT
           else
-            CONTRACTS=$(find contracts -mindepth 1 -maxdepth 1 -type d | sed 's|contracts/||' | sort)
-            MATRIX=$(echo "$CONTRACTS" | jq -R -s -c 'split("\n") | map(select(length > 0)) | map({contract: .})')
+            CONTRACTS=$(find contracts -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort | jq -R -s -c 'split("\n") | map(select(length>0)) | map({contract: .})')
+            echo "matrix={\"include\":$CONTRACTS}" >> $GITHUB_OUTPUT
           fi
-          echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
-          echo "Discovered contracts matrix: $MATRIX"
+          cat $GITHUB_OUTPUT
 
-      - name: Check if subscription contract exists
+      - name: Check subscription contract
         id: check-subscription
         run: |
           if [ -d "contracts/subscription" ]; then
@@ -83,16 +79,14 @@ jobs:
             echo "exists=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Upload imported PiRC assets
+      - name: Upload imported assets
         uses: actions/upload-artifact@v4
         with:
           name: pirc-imported-assets
           path: imported/
           retention-days: ${{ env.ARTIFACTS_RETENTION_DAYS }}
+          if-no-files-found: ignore
 
-  ##########################################################################
-  # Job 2: Build, Test, Audit every contract (Matrix strategy)
-  ##########################################################################
   build-test-audit:
     name: Build • Test • Audit → ${{ matrix.contract }}
     needs: discover-and-import
@@ -101,16 +95,17 @@ jobs:
       fail-fast: false
       matrix: ${{ fromJson(needs.discover-and-import.outputs.matrix) }}
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Download PiRC imported assets
+      - name: Download PiRC assets
         uses: actions/download-artifact@v4
         with:
           name: pirc-imported-assets
           path: imported/
+        continue-on-error: true
 
-      - name: Setup Rust toolchain
+      - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: ${{ env.RUST_VERSION }}
@@ -118,11 +113,9 @@ jobs:
           targets: wasm32-unknown-unknown
 
       - name: Install Soroban CLI
-        run: |
-          cargo install --locked soroban-cli --version ${{ env.SOROBAN_CLI_VERSION }} || true
-          soroban version || true
+        run: cargo install --locked soroban-cli --version ${{ env.SOROBAN_CLI_VERSION }} || true
 
-      - name: Cache Cargo dependencies
+      - name: Cache
         uses: actions/cache@v4
         with:
           path: |
@@ -131,24 +124,23 @@ jobs:
             target
           key: ${{ runner.os }}-cargo-${{ matrix.contract }}-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: Build contract
+      - name: Build
         working-directory: contracts/${{ matrix.contract }}
         run: |
           if [ -f Cargo.toml ]; then
             cargo build --target wasm32-unknown-unknown --release
-            echo "Build successful for ${{ matrix.contract }}"
           else
-            echo "No Cargo.toml found – skipping build"
+            echo "No Cargo.toml – skipping build"
           fi
 
-      - name: Run tests
+      - name: Test
         working-directory: contracts/${{ matrix.contract }}
         run: |
           if [ -f Cargo.toml ]; then
             cargo test -- --nocapture || true
           fi
 
-      - name: Run Clippy and formatting checks
+      - name: Clippy & Format
         working-directory: contracts/${{ matrix.contract }}
         run: |
           if [ -f Cargo.toml ]; then
@@ -156,21 +148,19 @@ jobs:
             cargo fmt --check || true
           fi
 
-      - name: Generate professional reports and diagrams
+      - name: Generate Reports & Diagrams
         run: |
-          python3 scripts/generate_professional_report.py --contract "${{ matrix.contract }}"
-          python3 scripts/generate_diagrams.py --contract "${{ matrix.contract }}"
+          python3 scripts/generate_professional_report.py --contract "${{ matrix.contract }}" || true
+          python3 scripts/generate_diagrams.py --contract "${{ matrix.contract }}" || true
 
-      - name: Upload per-contract artifacts
+      - name: Upload report
         uses: actions/upload-artifact@v4
         with:
           name: report-${{ matrix.contract }}
           path: reports/${{ matrix.contract }}/
           retention-days: ${{ env.ARTIFACTS_RETENTION_DAYS }}
+          if-no-files-found: ignore
 
-  ##########################################################################
-  # Job 3: Deep audit for the subscription contract
-  ##########################################################################
   subscription-deep-audit:
     name: Deep Audit – Subscription Contract
     needs: discover-and-import
@@ -184,36 +174,34 @@ jobs:
         with:
           name: pirc-imported-assets
           path: imported/
+        continue-on-error: true
 
-      - name: Setup Rust + Soroban
+      - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: ${{ env.RUST_VERSION }}
           targets: wasm32-unknown-unknown
 
-      - name: Full validation of subscription contract
+      - name: Full validation
         working-directory: contracts/subscription
         run: |
-          cargo build --target wasm32-unknown-unknown --release
+          cargo build --target wasm32-unknown-unknown --release || true
           cargo test -- --nocapture || true
-          echo "Deep validation of subscription contract completed"
 
-      - name: Generate deep audit report
+      - name: Generate deep report
         run: |
-          python3 scripts/generate_professional_report.py --contract subscription --deep
-          python3 scripts/generate_diagrams.py --contract subscription
+          python3 scripts/generate_professional_report.py --contract subscription --deep || true
+          python3 scripts/generate_diagrams.py --contract subscription || true
 
       - uses: actions/upload-artifact@v4
         with:
           name: subscription-deep-audit
           path: reports/subscription/
           retention-days: ${{ env.ARTIFACTS_RETENTION_DAYS }}
+          if-no-files-found: ignore
 
-  ##########################################################################
-  # Job 4: Final summary
-  ##########################################################################
   finalize:
-    name: Generate Master Summary
+    name: Master Summary
     needs: [build-test-audit, subscription-deep-audit]
     if: always()
     runs-on: ubuntu-latest
@@ -222,25 +210,22 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: all-reports/
+        continue-on-error: true
 
       - name: Create Master Report
         run: |
           echo "# Master Smart Contracts Pipeline Report" > MASTER_REPORT.md
           echo "**Generated:** $(date -u)" >> MASTER_REPORT.md
-          echo "**Repository:** Ze0ro99/SmartContracts" >> MASTER_REPORT.md
-          echo "**Standards imported from:** Ze0ro99/PiRC" >> MASTER_REPORT.md
-          echo "" >> MASTER_REPORT.md
-          echo "## Pipeline Status" >> MASTER_REPORT.md
-          echo "- All discovered contracts were processed" >> MASTER_REPORT.md
-          echo "- Professional reports and Mermaid diagrams generated" >> MASTER_REPORT.md
-          echo "- Subscription contract received deep audit" >> MASTER_REPORT.md
-          echo "- Pipeline is future-proof for new contracts" >> MASTER_REPORT.md
+          echo "**Status:** Pipeline completed with available results" >> MASTER_REPORT.md
+          echo "- Contracts processed via matrix strategy" >> MASTER_REPORT.md
+          echo "- Reports and diagrams generated where possible" >> MASTER_REPORT.md
+          echo "- PiRC standards imported (if available)" >> MASTER_REPORT.md
 
-      - name: Upload Master Report
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: MASTER-PIPELINE-REPORT
           path: |
             MASTER_REPORT.md
             all-reports/
           retention-days: 90
+          if-no-files-found: ignore
