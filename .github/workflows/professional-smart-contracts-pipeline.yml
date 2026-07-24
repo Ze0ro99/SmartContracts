@@ -20,7 +20,8 @@ on:
         default: ''
 
 env:
-  RUST_VERSION: '1.85'
+  RUST_VERSION: '1.88'
+  SOROBAN_VERSION: '23.0.0'
   ARTIFACTS_RETENTION_DAYS: 30
 
 jobs:
