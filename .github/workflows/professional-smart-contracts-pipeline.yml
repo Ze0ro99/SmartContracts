@@ -24,6 +24,10 @@ env:
   SOROBAN_VERSION: '23.0.0'
   ARTIFACTS_RETENTION_DAYS: 30
 
+permissions:
+  contents: read
+  actions: read
+
 jobs:
   # =========================================================
   # 1. Discover valid contracts + Prepare PiRC assets
