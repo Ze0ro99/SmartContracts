@@ -1,0 +1,20 @@
+[package]
+ feature/auto-integration-pirc-120
+name = "pirc-120-contract"
+version = "1.0.0"
+edition = "2021"
+
+[dependencies]
+soroban-sdk = "20.0.0"
+
+[lib]
+crate-type = ["cdylib"]
+
+name = "pirc-120-core"
+version = "1.0.0"
+edition = "2021"
+[dependencies]
+soroban-sdk = "20.0.0"
+[lib]
+crate-type = ["cdylib"]
+ main
