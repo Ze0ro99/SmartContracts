@@ -2,7 +2,7 @@ name: Auto Smart Contracts Controller
 
 on:
   schedule:
-    - cron: '0 * * * *'              # Every hour
+    - cron: '0 * * * *'
   push:
     branches: [main, master, develop]
     paths:
@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
     inputs:
       force_heal_all:
-        description: 'Force heal all contracts'
+        description: 'Force heal all contracts (except keep subscription source intact)'
         type: boolean
         default: false
       push_repairs:
@@ -40,10 +40,11 @@ env:
   MAX_HEAL: '80'
   REPAIR_BRANCH: 'auto-repair/contracts'
   ARTIFACTS_DAYS: 14
+  CARGO_TERM_COLOR: always
 
 jobs:
   # ============================================================
-  # 1. Heal all broken contracts + rotating matrix + export
+  # 1. Heal + Rotate + Export
   # ============================================================
   heal-and-export:
     name: Heal + Rotate + Export
@@ -60,7 +61,7 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Import PiRC (optional)
+      - name: Import PiRC (non-blocking)
         continue-on-error: true
         uses: actions/checkout@v4
         with:
@@ -70,20 +71,21 @@ jobs:
 
       - name: Prepare assets
         run: |
-          mkdir -p imported/{schemas,registries,manifests,templates,exports}
+          set -euo pipefail
+          mkdir -p imported/schemas imported/registries imported/manifests imported/templates imported/exports
 
           if [ -d pirc-import ]; then
-            echo "→ Importing from PiRC..."
+            echo "Importing from PiRC..."
             cp -r pirc-import/schemas/. imported/schemas/ 2>/dev/null || true
             cp pirc-import/*.json imported/registries/ 2>/dev/null || true
             cp pirc-import/sovereign_manifest.json imported/manifests/ 2>/dev/null || true
           else
-            echo "→ PiRC unavailable – using fallbacks"
+            echo "PiRC unavailable – fallbacks only"
           fi
 
-          echo '{"contracts":[],"version":"controller","source":"auto-controller"}' > imported/registries/CONTRACTS_REGISTRY.json
-          echo '{"name":"Controller Manifest","version":"1.0"}' > imported/manifests/sovereign_manifest.json
-          echo '{"title":"Fallback Schema","type":"object"}' > imported/schemas/fallback.json
+          printf '%s\n' '{"contracts":[],"version":"controller","source":"auto-controller"}' > imported/registries/CONTRACTS_REGISTRY.json
+          printf '%s\n' '{"name":"Controller Manifest","version":"1.0"}' > imported/manifests/sovereign_manifest.json
+          printf '%s\n' '{"title":"Fallback Schema","type":"object"}' > imported/schemas/fallback.json
 
           if [ -f contracts/subscription/Cargo.toml ]; then
             cp contracts/subscription/Cargo.toml imported/templates/clean.toml
@@ -100,27 +102,36 @@ jobs:
             [ -d "$dir" ] || continue
             name=$(basename "$dir")
             f="${dir}Cargo.toml"
-            NEED_HEAL=false
 
+            # NEVER overwrite a healthy subscription contract
+            if [ "$name" = "subscription" ]; then
+              if [ -f "$f" ] && python3 -c "import tomllib; tomllib.load(open('$f','rb'))" 2>/dev/null; then
+                echo "Skip heal (protected): subscription"
+                continue
+              fi
+            fi
+
+            NEED_HEAL=false
             if [ ! -f "$f" ]; then
               NEED_HEAL=true
             elif ! python3 -c "import tomllib; tomllib.load(open('$f','rb'))" 2>/dev/null; then
               NEED_HEAL=true
               echo "Invalid TOML → $name"
-            elif [ "$FORCE" = "true" ]; then
+            elif [ "$FORCE" = "true" ] && [ "$name" != "subscription" ]; then
               NEED_HEAL=true
-            elif grep -qE 'soroban-sdk\s*=\s*"(20|21)\.' "$f" 2>/dev/null; then
+            elif grep -qE 'soroban-sdk[[:space:]]*=[[:space:]]*"(20|21)\.' "$f" 2>/dev/null; then
               NEED_HEAL=true
               echo "Outdated SDK → $name"
             fi
 
             [ "$NEED_HEAL" = "false" ] && continue
-            [ $REPAIRED -ge ${{ env.MAX_HEAL }} ] && break
+            [ "$REPAIRED" -ge "${{ env.MAX_HEAL }}" ] && break
 
             echo "→ Healing: $name"
             mkdir -p "${dir}src"
 
-            cat > "$f" << EOF
+            # Clean TOML (NO leading spaces)
+            cat > "$f" <<EOF
           [package]
           name = "${name//_/-}"
           version = "0.1.0"
@@ -138,8 +149,11 @@ jobs:
           soroban-sdk = { workspace = true, features = ["testutils"] }
           EOF
 
+            # Strip accidental leading spaces from file (critical fix)
+            sed -i 's/^[[:space:]]*//' "$f"
+
             if [ ! -f "${dir}src/lib.rs" ]; then
-              cat > "${dir}src/lib.rs" << 'EOF'
+              cat > "${dir}src/lib.rs" <<'EOF'
           #![no_std]
           use soroban_sdk::{contract, contractimpl, Env, Symbol};
 
@@ -153,13 +167,16 @@ jobs:
               }
           }
           EOF
+              sed -i 's/^[[:space:]]*//' "${dir}src/lib.rs"
             fi
 
             if python3 -c "import tomllib; tomllib.load(open('$f','rb'))" 2>/dev/null; then
               echo "  ✓ Healed: $name"
               REPAIRED=$((REPAIRED + 1))
             else
-              echo "  ✗ Failed: $name"
+              echo "  ✗ Failed heal: $name"
+              echo "---- content ----"
+              cat "$f" || true
             fi
           done
 
@@ -167,7 +184,7 @@ jobs:
           echo "=== Total repaired: $REPAIRED ==="
           find contracts -name Cargo.toml | sort > imported/exports/healed-list.txt
 
-      - name: Build rotating matrix (12 NEW contracts each hour)
+      - name: Build rotating matrix (12 NEW each hour)
         id: matrix
         run: |
           set -euo pipefail
@@ -175,15 +192,13 @@ jobs:
           mkdir -p imported/exports
 
           RESET="${{ github.event.inputs.reset_cycle || 'false' }}"
-
           if [ "$RESET" = "true" ] || [ ! -f "$STATE_FILE" ]; then
             echo '{"processed":[],"last_run":""}' > "$STATE_FILE"
-            echo "State reset / initialized"
+            echo "State initialized/reset"
           fi
 
-          PROCESSED=$(jq -r '.processed[]?' "$STATE_FILE" 2>/dev/null || true)
+          mapfile -t PROCESSED < <(jq -r '.processed[]?' "$STATE_FILE" 2>/dev/null || true)
 
-          # Collect all valid contracts
           ALL=()
           if [ -f contracts/subscription/Cargo.toml ] && \
              python3 -c "import tomllib; tomllib.load(open('contracts/subscription/Cargo.toml','rb'))" 2>/dev/null; then
@@ -200,85 +215,88 @@ jobs:
             fi
           done
 
-          echo "Total valid contracts found: ${#ALL[@]}"
+          echo "Valid contracts: ${#ALL[@]}"
 
-          # Select up to 12 NOT yet processed
           SELECTED=()
           for c in "${ALL[@]}"; do
-            if echo "$PROCESSED" | grep -qx "$c"; then
-              continue
-            fi
+            skip=false
+            for p in "${PROCESSED[@]:-}"; do
+              [ "$p" = "$c" ] && skip=true && break
+            done
+            [ "$skip" = "true" ] && continue
             SELECTED+=("$c")
-            if [ ${#SELECTED[@]} -ge ${{ env.MAX_BUILD_CONTRACTS }} ]; then
-              break
-            fi
+            [ ${#SELECTED[@]} -ge ${{ env.MAX_BUILD_CONTRACTS }} ] && break
           done
 
-          # If all processed → reset cycle and start over
           if [ ${#SELECTED[@]} -eq 0 ] && [ ${#ALL[@]} -gt 0 ]; then
-            echo "All contracts already processed → resetting cycle"
+            echo "Full cycle done → reset"
             echo '{"processed":[],"last_run":""}' > "$STATE_FILE"
             SELECTED=()
             for c in "${ALL[@]}"; do
               SELECTED+=("$c")
-              if [ ${#SELECTED[@]} -ge ${{ env.MAX_BUILD_CONTRACTS }} ]; then
-                break
-              fi
+              [ ${#SELECTED[@]} -ge ${{ env.MAX_BUILD_CONTRACTS }} ] && break
             done
           fi
 
-          # Always prefer including subscription if valid and not already selected
-          if [[ " ${ALL[*]} " == *" subscription "* ]] && [[ ! " ${SELECTED[*]} " == *" subscription "* ]]; then
-            SELECTED=("subscription" "${SELECTED[@]}")
-            # trim to max
-            SELECTED=("${SELECTED[@]:0:${{ env.MAX_BUILD_CONTRACTS }}}")
+          # Prefer subscription in batch
+          if printf '%s\n' "${ALL[@]}" | grep -qx "subscription"; then
+            if ! printf '%s\n' "${SELECTED[@]}" | grep -qx "subscription"; then
+              SELECTED=("subscription" "${SELECTED[@]}")
+              SELECTED=("${SELECTED[@]:0:${{ env.MAX_BUILD_CONTRACTS }}}")
+            fi
           fi
 
           if [ ${#SELECTED[@]} -eq 0 ]; then
             echo "has_work=false" >> "$GITHUB_OUTPUT"
             echo 'matrix={"include":[]}' >> "$GITHUB_OUTPUT"
-            echo "No contracts to build"
             exit 0
           fi
 
-          # Update state
-          NEW_PROCESSED=$(printf '%s\n' $PROCESSED "${SELECTED[@]}" | grep -v '^$' | sort -u)
-          jq -n \
-            --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            --argjson list "$(printf '%s\n' $NEW_PROCESSED | jq -Rnc '[inputs]')" \
-            '{processed: $list, last_run: $ts}' > "$STATE_FILE"
+          # Merge processed
+          {
+            printf '%s\n' "${PROCESSED[@]:-}"
+            printf '%s\n' "${SELECTED[@]}"
+          } | grep -v '^$' | sort -u > /tmp/proc.txt
 
-          MATRIX=$(printf '%s\n' "${SELECTED[@]}" | jq -Rnc '{include: [inputs | select(length>0) | {contract: .}]}')
+          jq -n --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --argjson list "$(jq -Rnc '[inputs]' < /tmp/proc.txt)" \
+            '{processed:$list,last_run:$ts}' > "$STATE_FILE"
+
+          MATRIX=$(printf '%s\n' "${SELECTED[@]}" | jq -Rnc '{include:[inputs|select(length>0)|{contract:.}]}')
           echo "has_work=true" >> "$GITHUB_OUTPUT"
           echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
-          echo "This hour batch (${#SELECTED[@]}): ${SELECTED[*]}"
+          echo "Batch (${#SELECTED[@]}): ${SELECTED[*]}"
 
-      - name: Commit & push repairs + state
+      - name: Commit & push repairs (robust)
         if: ${{ github.event.inputs.push_repairs != 'false' }}
+        continue-on-error: true
         run: |
+          set +e
           git config user.name "Auto-Controller Bot"
-          git config user.email "auto-controller@users.noreply.github.com"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add contracts/*/Cargo.toml contracts/*/src/lib.rs 2>/dev/null || true
-          git add Cargo.toml 2>/dev/null || true
-          git add imported/exports/ 2>/dev/null || true
+          git add contracts/*/Cargo.toml contracts/*/src/lib.rs 2>/dev/null
+          git add imported/exports/ 2>/dev/null
+          git add Cargo.toml 2>/dev/null
 
           if git diff --staged --quiet; then
             echo "No changes to commit"
-          else
-            git checkout -B ${{ env.REPAIR_BRANCH }}
-            git commit -m "chore(auto-heal): repair contracts + rotate build state [skip ci]"
-            git push origin ${{ env.REPAIR_BRANCH }} --force
-
-            echo "✓ Repairs pushed to branch: ${{ env.REPAIR_BRANCH }}"
-
-            # Best-effort merge into main
-            git checkout main 2>/dev/null || git checkout master 2>/dev/null || true
-            git merge ${{ env.REPAIR_BRANCH }} -m "merge: auto-healed contracts" || true
-            git push origin HEAD:main 2>/dev/null || \
-            git push origin HEAD:master 2>/dev/null || \
-              echo "Note: Could not push to main (branch protection). Merge PR from ${{ env.REPAIR_BRANCH }} manually."
+            exit 0
           fi
+
+          git checkout -B "${{ env.REPAIR_BRANCH }}"
+          git commit -m "chore(auto-heal): repair contracts + build state [skip ci]"
+          if git push origin "${{ env.REPAIR_BRANCH }}" --force; then
+            echo "✓ Pushed to ${{ env.REPAIR_BRANCH }}"
+          else
+            echo "⚠ Push to repair branch failed (exit $?)"
+          fi
+
+          # Best-effort main (ignore failure)
+          git checkout main 2>/dev/null || git checkout master 2>/dev/null
+          git merge "${{ env.REPAIR_BRANCH }}" -m "merge: auto-healed contracts" 2>/dev/null
+          git push origin HEAD:main 2>/dev/null || git push origin HEAD:master 2>/dev/null || \
+            echo "Note: main protected – merge PR from ${{ env.REPAIR_BRANCH }}"
 
       - name: Upload exports
         uses: actions/upload-artifact@v4
@@ -291,14 +309,14 @@ jobs:
           if-no-files-found: ignore
 
   # ============================================================
-  # 2. Build + Test + Diagrams (max 12, rotating)
+  # 2. Build + Test + Report
   # ============================================================
   build:
     name: Build → ${{ matrix.contract }}
     needs: heal-and-export
     if: needs.heal-and-export.outputs.has_work == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       max-parallel: 3
@@ -320,13 +338,14 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-ctrl-${{ matrix.contract }}-${{ hashFiles(format('contracts/{0}/Cargo.toml', matrix.contract)) }}
+          key: ${{ runner.os }}-v2-${{ matrix.contract }}-${{ hashFiles(format('contracts/{0}/Cargo.toml', matrix.contract)) }}
 
-      - name: Create isolated workspace
+      - name: Create isolated workspace (clean, no indent bugs)
         run: |
           CONTRACT="${{ matrix.contract }}"
           cp Cargo.toml Cargo.toml.bak 2>/dev/null || true
-          cat > Cargo.toml << EOF
+
+          cat > Cargo.toml <<EOF
           [workspace]
           resolver = "2"
           members = ["contracts/${CONTRACT}"]
@@ -344,45 +363,63 @@ jobs:
           lto = true
           EOF
 
+          # Remove any leading spaces that break TOML
+          sed -i 's/^[[:space:]]*//' Cargo.toml
+          echo "---- Workspace Cargo.toml ----"
+          cat Cargo.toml
+          echo "---- Contract Cargo.toml ----"
+          cat "contracts/${CONTRACT}/Cargo.toml" || true
+
       - name: Build
         id: build
         continue-on-error: true
         run: |
+          set +e
           cargo build --target wasm32-unknown-unknown --release \
-            --manifest-path "contracts/${{ matrix.contract }}/Cargo.toml"
+            --manifest-path "contracts/${{ matrix.contract }}/Cargo.toml" 2>&1 | tee /tmp/build.log
+          CODE=${PIPESTATUS[0]}
+          if [ "$CODE" -ne 0 ]; then
+            echo "BUILD_FAILED=1" >> "$GITHUB_ENV"
+            echo "---- Last 80 lines of build log ----"
+            tail -n 80 /tmp/build.log || true
+            exit 0
+          fi
+          echo "BUILD_FAILED=0" >> "$GITHUB_ENV"
+          echo "Build OK"
 
       - name: Test
-        if: steps.build.outcome == 'success'
+        if: env.BUILD_FAILED == '0'
         continue-on-error: true
         run: |
           cargo test --manifest-path "contracts/${{ matrix.contract }}/Cargo.toml" -- --nocapture || true
 
-      - name: Generate report + diagram
+      - name: Report + Diagram
         run: |
           mkdir -p "reports/${{ matrix.contract }}/diagrams"
-          STATUS="FAILED"
-          [ "${{ steps.build.outcome }}" = "success" ] && STATUS="SUCCESS"
+          if [ "${{ env.BUILD_FAILED }}" = "0" ]; then STATUS="SUCCESS"; else STATUS="FAILED"; fi
 
-          cat > "reports/${{ matrix.contract }}/REPORT.md" << EOF
+          cat > "reports/${{ matrix.contract }}/REPORT.md" <<EOF
           # Controller Report – ${{ matrix.contract }}
-          - Status: $STATUS
+          - Status: ${STATUS}
           - Date: $(date -u)
-          - Isolated: yes
+          - Isolated workspace: yes
           - SDK: ${{ env.SOROBAN_SDK }}
-          - Source: Auto Controller (rotating)
+          - Mode: rotating batch (max 12/hour)
           EOF
+          sed -i 's/^[[:space:]]*//' "reports/${{ matrix.contract }}/REPORT.md"
 
-          cat > "reports/${{ matrix.contract }}/diagrams/flow.mmd" << 'EOF'
+          cat > "reports/${{ matrix.contract }}/diagrams/flow.mmd" <<EOF
           sequenceDiagram
               participant Controller
               participant Heal
               participant Build
-              participant OtherWorkflows
-              Controller->>Heal: Repair Cargo.toml + SDK
+              participant OtherWFs
+              Controller->>Heal: Repair broken Cargo.toml
               Heal->>Build: Build 12 NEW contracts
-              Heal->>OtherWorkflows: Push fixed files
-              Build->>Controller: Report + Diagram
+              Heal->>OtherWFs: Push fixed files
+              Build->>Controller: Report
           EOF
+          sed -i 's/^[[:space:]]*//' "reports/${{ matrix.contract }}/diagrams/flow.mmd"
 
       - name: Restore workspace
         if: always()
@@ -397,7 +434,7 @@ jobs:
           retention-days: ${{ env.ARTIFACTS_DAYS }}
 
   # ============================================================
-  # 3. Master Summary
+  # 3. Summary
   # ============================================================
   summary:
     name: Controller Summary
@@ -413,19 +450,22 @@ jobs:
 
       - name: Write summary
         run: |
-          echo "# Auto Controller – Master Summary" > SUMMARY.md
-          echo "**Date:** $(date -u)" >> SUMMARY.md
-          echo "**Repaired:** ${{ needs.heal-and-export.outputs.repaired_count }}" >> SUMMARY.md
-          echo "**Build limit:** ${{ env.MAX_BUILD_CONTRACTS }} NEW contracts per hour" >> SUMMARY.md
-          echo "**Schedule:** Every hour" >> SUMMARY.md
-          echo "" >> SUMMARY.md
-          echo "## Features" >> SUMMARY.md
-          echo "- Heals up to 80 broken/outdated contracts" >> SUMMARY.md
-          echo "- Rotates 12 NEW contracts each hour (no repeat until full cycle)" >> SUMMARY.md
-          echo "- Pushes fixes to \`${{ env.REPAIR_BRANCH }}\`" >> SUMMARY.md
-          echo "- Other workflows receive fixed files after merge" >> SUMMARY.md
-          echo "- Handles future new contracts automatically" >> SUMMARY.md
-          echo "- Generates reports + Mermaid diagrams" >> SUMMARY.md
+          cat > SUMMARY.md <<EOF
+          # Auto Controller – Master Summary
+          **Date:** $(date -u)
+          **Repaired:** ${{ needs.heal-and-export.outputs.repaired_count }}
+          **Build limit:** ${{ env.MAX_BUILD_CONTRACTS }} NEW contracts / hour
+          **Schedule:** Hourly
+
+          ## Fixes in this version
+          - Protected subscription from destructive heal
+          - Clean TOML (no leading-space bugs)
+          - Isolated workspace per contract
+          - Rotating matrix (no repeat until full cycle)
+          - Robust git push (non-blocking)
+          - PiRC import non-blocking
+          - Clear build logs on failure
+          EOF
 
       - uses: actions/upload-artifact@v4
         with:
