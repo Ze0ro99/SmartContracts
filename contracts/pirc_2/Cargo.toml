@@ -1,12 +1,15 @@
 [package]
- feature/v7-generative-pirc-2
-name = "pirc-2-core"
-
-name = "pirc-2-contract"
- main
-version = "1.0.0"
+name = "pirc-2"
+version = "0.1.0"
 edition = "2021"
-[dependencies]
-soroban-sdk = "20.0.0"
+publish = false
+
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "lib"]
+doctest = false
+
+[dependencies]
+soroban-sdk = { workspace = true }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }

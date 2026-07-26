@@ -1,8 +1,15 @@
 [package]
-name = "pirc-238-core"
-version = "1.0.0"
+name = "pirc-238"
+version = "0.1.0"
 edition = "2021"
-[dependencies]
-soroban-sdk = "20.0.0"
+publish = false
+
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "lib"]
+doctest = false
+
+[dependencies]
+soroban-sdk = { workspace = true }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
