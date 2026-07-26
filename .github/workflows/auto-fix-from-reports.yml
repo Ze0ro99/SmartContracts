@@ -46,7 +46,7 @@ env:
 
 jobs:
   # ============================================================
-  # 1. Discover errors from repo + reports (never hard-fail)
+  # 1. Discover errors (never hard-fail on empty grep/find)
   # ============================================================
   discover:
     name: Discover All Errors & Reports
@@ -64,14 +64,15 @@ jobs:
         with:
           path: incoming/
 
-      - name: Scan repo + reports (robust, no pipefail crash)
+      - name: Scan repo + reports
         id: plan
         run: |
           set +e
           mkdir -p analysis/errors analysis/reports
+          : > analysis/errors/all.txt
 
-          BROKEN_LIST=""
-          VALID_LIST=""
+          BROKEN=""
+          VALID=""
 
           for dir in contracts/*/; do
             [ -d "$dir" ] || continue
@@ -94,55 +95,55 @@ jobs:
             fi
 
             if [ "$bad" -eq 1 ]; then
-              BROKEN_LIST="$BROKEN_LIST $name"
+              BROKEN="$BROKEN $name"
             else
-              VALID_LIST="$VALID_LIST $name"
+              VALID="$VALID $name"
             fi
           done
 
-          # Harvest FAILED reports from artifacts
           find incoming -type f -name 'REPORT.md' 2>/dev/null | while read -r r; do
             if grep -qiE 'Status: FAILED|BUILD_FAILED|exit code 101|error' "$r" 2>/dev/null; then
-              cp "$r" analysis/reports/ 2>/dev/null
-              echo "FAILED_REPORT:$(basename $(dirname "$r"))" >> analysis/errors/all.txt
+              cp "$r" analysis/reports/ 2>/dev/null || true
+              echo "FAILED_REPORT:$(basename "$(dirname "$r")")" >> analysis/errors/all.txt
             fi
-          done || true
-
-          # Priority queue: subscription first, then broken, then valid
-          SELECTED=""
-          echo "$BROKEN_LIST" | tr ' ' '\n' | grep -v '^$' | while read x; do echo "B:$x"; done > /tmp/prio.txt
-          echo "$VALID_LIST" | tr ' ' '\n' | grep -v '^$' | while read x; do echo "V:$x"; done >> /tmp/prio.txt
-
-          ORDER=""
-          # subscription always first if exists
-          if [ -d contracts/subscription ]; then ORDER="subscription"; fi
-          for tag in B V; do
-            grep "^$tag:" /tmp/prio.txt 2>/dev/null | cut -d: -f2 | while read n; do
-              [ "$n" = "subscription" ] && continue
-              ORDER="$ORDER $n"
-            done
           done
 
-          # Build unique list max MAX_TEST
+          # Priority: subscription first, then broken, then valid
           FINAL=""
           count=0
-          for n in $ORDER; do
-            echo " $FINAL " | grep -q " $n " && continue
+          LIMIT="${{ github.event.inputs.max_contracts || env.MAX_TEST }}"
+
+          add() {
+            local n="$1"
+            echo " $FINAL " | grep -q " $n " && return
             FINAL="$FINAL $n"
-            count=$((count+1))
-            [ "$count" -ge "${{ github.event.inputs.max_contracts || env.MAX_TEST }}" ] && break
+            count=$((count + 1))
+          }
+
+          if [ -d contracts/subscription ]; then
+            add "subscription"
+          fi
+
+          for n in $BROKEN; do
+            [ "$count" -ge "$LIMIT" ] && break
+            add "$n"
           done
 
-          # fallback
-          if [ -z "$(echo $FINAL | tr -d ' ')" ]; then
+          for n in $VALID; do
+            [ "$count" -ge "$LIMIT" ] && break
+            add "$n"
+          done
+
+          if [ -z "$(echo "$FINAL" | tr -d ' ')" ]; then
             FINAL="subscription"
           fi
 
-          MATRIX=$(echo $FINAL | tr ' ' '\n' | grep -v '^$' | jq -Rnc '{include:[inputs|select(length>0)|{contract:.}]}')
+          MATRIX=$(echo "$FINAL" | tr ' ' '\n' | grep -v '^$' | jq -Rnc '{include:[inputs|select(length>0)|{contract:.}]}')
           echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
           echo "has_work=true" >> "$GITHUB_OUTPUT"
-          echo "Selected for fix+test: $FINAL"
-          cat analysis/errors/all.txt 2>/dev/null || echo "No structured errors file"
+          echo "Selected: $FINAL"
+          echo "---- errors ----"
+          cat analysis/errors/all.txt 2>/dev/null || true
 
       - uses: actions/upload-artifact@v4
         with:
@@ -151,7 +152,7 @@ jobs:
           if-no-files-found: ignore
 
   # ============================================================
-  # 2. Fix + Unit test + Optional Testnet deploy
+  # 2. Fix + Build + Test + Optional Testnet
   # ============================================================
   fix-and-test:
     name: Fix+Test → ${{ matrix.contract }}
@@ -180,7 +181,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-ft-${{ matrix.contract }}-${{ hashFiles(format('contracts/{0}/Cargo.toml', matrix.contract)) }}
+          key: ${{ runner.os }}-ft-v2-${{ matrix.contract }}-${{ hashFiles(format('contracts/{0}/Cargo.toml', matrix.contract)) }}
 
       - name: Repair contract files if needed
         run: |
@@ -196,7 +197,6 @@ jobs:
           if [ -f "$f" ] && grep -qE '^(feature/|[[:space:]]*main[[:space:]]*$)' "$f" 2>/dev/null; then NEED=1; fi
           if [ -f "$f" ] && grep -qE 'soroban-sdk[[:space:]]*=[[:space:]]*"(20|21)\.' "$f" 2>/dev/null; then NEED=1; fi
 
-          # Never destroy healthy subscription source logic — only fix manifest
           if [ "$name" = "subscription" ] && [ -f "$f" ] && [ "$NEED" -eq 0 ]; then
             echo "subscription manifest OK – skip rewrite"
           elif [ "$NEED" -eq 1 ]; then
@@ -245,6 +245,7 @@ jobs:
 
       - name: Isolated workspace
         run: |
+          set +e
           CONTRACT="${{ matrix.contract }}"
           cp Cargo.toml Cargo.toml.bak 2>/dev/null || true
           cat > Cargo.toml <<EOF
@@ -263,6 +264,10 @@ jobs:
           lto = true
           EOF
           sed -i 's/^[[:space:]]*//' Cargo.toml
+          echo "---- workspace ----"
+          cat Cargo.toml
+          echo "---- contract ----"
+          cat "contracts/${CONTRACT}/Cargo.toml" || true
 
       - name: Build WASM
         id: build
@@ -271,23 +276,31 @@ jobs:
           set +e
           cargo build --target wasm32-unknown-unknown --release \
             --manifest-path "contracts/${{ matrix.contract }}/Cargo.toml" 2>&1 | tee /tmp/build.log
-          echo "code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
-          if [ "${PIPESTATUS[0]}" -ne 0 ]; then tail -n 50 /tmp/build.log; fi
+          CODE=${PIPESTATUS[0]}
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
+          if [ "$CODE" -ne 0 ]; then
+            echo "==== BUILD FAILED (exit $CODE) ===="
+            tail -n 80 /tmp/build.log || true
+          else
+            echo "Build OK"
+          fi
 
       - name: Unit tests
         if: steps.build.outputs.code == '0'
         continue-on-error: true
         run: |
+          set +e
           cargo test --manifest-path "contracts/${{ matrix.contract }}/Cargo.toml" -- --nocapture || true
 
-      - name: Install stellar-cli (free official tool)
+      - name: Install stellar-cli
         if: steps.build.outputs.code == '0' && github.event.inputs.enable_testnet_deploy != 'false'
         continue-on-error: true
         run: |
+          set +e
           cargo install --locked stellar-cli --version 23.0.0 2>/dev/null || \
           cargo install --locked stellar-cli 2>/dev/null || \
           cargo install --locked soroban-cli 2>/dev/null || true
-          stellar version 2>/dev/null || soroban version 2>/dev/null || echo "CLI install skipped/failed"
+          stellar version 2>/dev/null || soroban version 2>/dev/null || echo "CLI not available"
 
       - name: Testnet deploy (Stellar Testnet + Friendbot)
         if: steps.build.outputs.code == '0' && github.event.inputs.enable_testnet_deploy != 'false'
@@ -297,25 +310,28 @@ jobs:
           CLI=""
           command -v stellar >/dev/null && CLI="stellar"
           command -v soroban >/dev/null && CLI="${CLI:-soroban}"
-          [ -z "$CLI" ] && echo "No CLI – skip testnet" && exit 0
+          if [ -z "$CLI" ]; then
+            echo "No CLI – skip testnet"
+            exit 0
+          fi
 
-          # Ephemeral identity funded by Friendbot (free)
           $CLI keys generate ci-deployer --network testnet --fund 2>/dev/null || \
-          $CLI keys generate ci-deployer 2>/dev/null
+          $CLI keys generate ci-deployer 2>/dev/null || true
 
-          # Configure network
           $CLI network add testnet \
             --rpc-url "${{ env.STELLAR_RPC }}" \
             --network-passphrase "${{ env.NETWORK_PASSPHRASE }}" 2>/dev/null || true
 
-          # Find wasm
           WASM=$(find target -name "*.wasm" 2>/dev/null | head -n 1)
           if [ -z "$WASM" ]; then
             WASM=$(find "contracts/${{ matrix.contract }}" -name "*.wasm" 2>/dev/null | head -n 1)
           fi
-          [ -z "$WASM" ] && echo "No WASM found" && exit 0
+          if [ -z "$WASM" ]; then
+            echo "No WASM found"
+            exit 0
+          fi
 
-          echo "Deploying $WASM to Stellar Testnet..."
+          echo "Deploying $WASM ..."
           OUT=$($CLI contract deploy \
             --wasm "$WASM" \
             --source-account ci-deployer \
@@ -323,30 +339,46 @@ jobs:
           echo "$OUT" | tee "reports-testnet-${{ matrix.contract }}.txt"
           echo "$OUT" | grep -oE 'C[A-Z0-9]{55,}' | head -n 1 > "contract-id-${{ matrix.contract }}.txt" || true
 
+      # ***** FIXED REPORT STEP (no set -e crash on missing files) *****
       - name: Write professional report
+        if: always()
         run: |
+          set +e
           mkdir -p "reports/${{ matrix.contract }}"
           CODE="${{ steps.build.outputs.code }}"
-          [ "$CODE" = "0" ] && ST="SUCCESS" || ST="FAILED"
-          cat > "reports/${{ matrix.contract }}/REPORT.md" <<EOF
-          # Professional Report – ${{ matrix.contract }}
-          - Build: $ST
-          - Date: $(date -u)
-          - Network target: Stellar Testnet (Soroban) – Pi-compatible stack
-          - RPC: ${{ env.STELLAR_RPC }}
-          - SDK: ${{ env.SOROBAN_SDK }}
-          - Tools: rustc, cargo, stellar-cli, Friendbot
-          EOF
-          sed -i 's/^[[:space:]]*//' "reports/${{ matrix.contract }}/REPORT.md"
-          [ -f "contract-id-${{ matrix.contract }}.txt" ] && \
-            echo "- Contract ID: $(cat contract-id-${{ matrix.contract }}.txt)" >> "reports/${{ matrix.contract }}/REPORT.md"
+          if [ -z "$CODE" ]; then CODE="unknown"; fi
+          if [ "$CODE" = "0" ]; then ST="SUCCESS"; else ST="FAILED"; fi
+
+          {
+            echo "# Professional Report – ${{ matrix.contract }}"
+            echo "- Build: ${ST}"
+            echo "- Build exit code: ${CODE}"
+            echo "- Date: $(date -u)"
+            echo "- Network target: Stellar Testnet (Soroban) – Pi-compatible stack"
+            echo "- RPC: ${{ env.STELLAR_RPC }}"
+            echo "- SDK: ${{ env.SOROBAN_SDK }}"
+            echo "- Tools: rustc, cargo, stellar-cli, Friendbot"
+          } > "reports/${{ matrix.contract }}/REPORT.md"
+
+          if [ -f "contract-id-${{ matrix.contract }}.txt" ]; then
+            echo "- Contract ID: $(cat "contract-id-${{ matrix.contract }}.txt")" >> "reports/${{ matrix.contract }}/REPORT.md"
+          fi
+
+          if [ -f "reports-testnet-${{ matrix.contract }}.txt" ]; then
+            echo "- Testnet deploy log: attached" >> "reports/${{ matrix.contract }}/REPORT.md"
+          fi
+
+          echo "---- REPORT ----"
+          cat "reports/${{ matrix.contract }}/REPORT.md"
 
       - name: Restore workspace
         if: always()
         run: |
-          [ -f Cargo.toml.bak ] && mv Cargo.toml.bak Cargo.toml || true
+          set +e
+          if [ -f Cargo.toml.bak ]; then mv Cargo.toml.bak Cargo.toml; fi
 
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: result-${{ matrix.contract }}
           path: |
@@ -357,7 +389,7 @@ jobs:
           if-no-files-found: ignore
 
   # ============================================================
-  # 3. Push fixes + Master summary
+  # 3. Publish fixes + summary
   # ============================================================
   publish:
     name: Publish Fixes & Summary
@@ -381,46 +413,39 @@ jobs:
         continue-on-error: true
         run: |
           set +e
-          # Re-apply quick heal on checkout for push consistency
           git config user.name "Auto-Fix-Testnet Bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          # Copy fixed manifests from artifacts if present
-          find all-results -name 'Cargo.toml' 2>/dev/null | head -n 5
 
           git add contracts/*/Cargo.toml contracts/*/src/lib.rs fixes/ 2>/dev/null
           if git diff --staged --quiet; then
             echo "No staged repairs"
-          else
-            git checkout -B ${{ env.FIX_BRANCH }}
-            git commit -m "fix(auto): repair contracts from reports + testnet pipeline [skip ci]"
-            git push origin ${{ env.FIX_BRANCH }} --force || true
-            echo "Pushed ${{ env.FIX_BRANCH }}"
+            exit 0
           fi
+
+          git checkout -B ${{ env.FIX_BRANCH }}
+          git commit -m "fix(auto): repair contracts from reports + testnet pipeline [skip ci]"
+          git push origin ${{ env.FIX_BRANCH }} --force || echo "Push failed (non-blocking)"
 
       - name: Master summary
         run: |
+          set +e
           cat > SUMMARY.md <<EOF
           # Auto Fix + Testnet Pipeline Summary
           **Date:** $(date -u)
 
-          ## Free professional stack used
+          ## Free professional stack
           - Rust / Cargo
-          - stellar-cli (official Stellar)
+          - stellar-cli (official)
           - Stellar Testnet RPC + Friendbot
           - cargo test (soroban testutils)
-          - Isolated workspace builds
 
-          ## Pi Network alignment
-          - Same Soroban technology as Pi smart contracts
-          - Compatible with PiRC-2 subscription patterns
-          - Testnet validation before any mainnet/Pi production
+          ## Pi alignment
+          - Same Soroban stack used by Pi smart contracts
+          - Compatible with PiRC patterns
+          - Testnet validation before production
 
-          ## Outputs
-          - Per-contract REPORT.md
-          - fixes/FIX-*.md when repaired
-          - contract-id-*.txt when testnet deploy succeeded
-          - Branch: ${{ env.FIX_BRANCH }}
+          ## Branch
+          - ${{ env.FIX_BRANCH }}
           EOF
 
       - uses: actions/upload-artifact@v4
