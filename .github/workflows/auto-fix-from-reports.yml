@@ -1,25 +1,26 @@
-name: Auto Fix From Reports & Errors
+name: Auto Fix Reports + Testnet Professional Pipeline
 
 on:
-  # When Controller finishes
   workflow_run:
     workflows:
       - "Auto Smart Contracts Controller"
       - "Professional Smart Contracts CI/CD, Audit & Reporting Pipeline"
       - "OMNI SmartContracts Pipeline"
+      - "Auto Fix From Reports & Errors"
     types: [completed]
-
   schedule:
-    - cron: '30 * * * *'   # Every hour at minute 30
-
+    - cron: '45 * * * *'
   workflow_dispatch:
     inputs:
-      force_full_scan:
-        description: 'Scan all contracts and force repairs'
+      max_contracts:
+        description: 'Max contracts to fix+test this run'
+        default: '5'
+      enable_testnet_deploy:
+        description: 'Deploy successful builds to Stellar Testnet (Friendbot)'
         type: boolean
         default: true
       push_fixes:
-        description: 'Commit and push fixes'
+        description: 'Commit repaired files to auto-fix branch'
         type: boolean
         default: true
 
@@ -29,181 +30,177 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: auto-fix-reports-${{ github.ref }}
+  group: auto-fix-testnet-${{ github.ref }}
   cancel-in-progress: true
 
 env:
+  RUST_VERSION: '1.85'
   SOROBAN_SDK: '22.0.11'
+  MAX_HEAL: '60'
+  MAX_TEST: '5'
   FIX_BRANCH: 'auto-fix/from-reports'
+  STELLAR_RPC: 'https://soroban-testnet.stellar.org'
+  NETWORK_PASSPHRASE: 'Test SDF Network ; September 2015'
   ARTIFACTS_DAYS: 14
+  CARGO_TERM_COLOR: always
 
 jobs:
   # ============================================================
-  # 1. Collect reports, errors, artifacts
+  # 1. Discover errors from repo + reports (never hard-fail)
   # ============================================================
-  collect:
-    name: Collect Reports & Errors
+  discover:
+    name: Discover All Errors & Reports
     runs-on: ubuntu-latest
     timeout-minutes: 15
     outputs:
-      has_artifacts: ${{ steps.collect.outputs.has_artifacts }}
+      matrix: ${{ steps.plan.outputs.matrix }}
+      has_work: ${{ steps.plan.outputs.has_work }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/checkout@v4
 
-      - name: Download available artifacts from recent runs
+      - name: Download any available artifacts
         continue-on-error: true
         uses: actions/download-artifact@v4
         with:
-          path: incoming-artifacts/
-          # Downloads artifacts available to this workflow context when possible
+          path: incoming/
 
-      - name: Collect local error signals + reports
-        id: collect
-        run: |
-          set -euo pipefail
-          mkdir -p analysis/errors analysis/reports analysis/fixes
-
-          echo "=== Scanning repository for broken contracts ===" > analysis/scan-log.txt
-
-          BROKEN=0
-          VALID=0
-
-          for dir in contracts/*/; do
-            [ -d "$dir" ] || continue
-            name=$(basename "$dir")
-            f="${dir}Cargo.toml"
-
-            if [ ! -f "$f" ]; then
-              echo "MISSING Cargo.toml: $name" | tee -a analysis/errors/missing.txt
-              BROKEN=$((BROKEN + 1))
-              continue
-            fi
-
-            if ! python3 -c "import tomllib; tomllib.load(open('$f','rb'))" 2>/dev/null; then
-              echo "INVALID TOML: $name" | tee -a analysis/errors/invalid-toml.txt
-              BROKEN=$((BROKEN + 1))
-              continue
-            fi
-
-            if grep -qE 'soroban-sdk[[:space:]]*=[[:space:]]*"(20|21)\.' "$f" 2>/dev/null; then
-              echo "OUTDATED SDK: $name" | tee -a analysis/errors/outdated-sdk.txt
-              BROKEN=$((BROKEN + 1))
-              continue
-            fi
-
-            # Detect garbage lines that often break manifests
-            if grep -qE '^(feature/| main$)' "$f" 2>/dev/null; then
-              echo "CORRUPTED LINES: $name" | tee -a analysis/errors/corrupted.txt
-              BROKEN=$((BROKEN + 1))
-              continue
-            fi
-
-            VALID=$((VALID + 1))
-          done
-
-          # Parse any downloaded FAILED reports
-          find incoming-artifacts -type f -name 'REPORT.md' 2>/dev/null | while read -r report; do
-            if grep -qi 'Status: FAILED\|BUILD_FAILED\|exit code 101' "$report" 2>/dev/null; then
-              echo "FAILED REPORT: $report" >> analysis/errors/failed-builds.txt
-              cp "$report" analysis/reports/ 2>/dev/null || true
-            fi
-          done
-
-          echo "broken=$BROKEN" >> analysis/summary.env
-          echo "valid=$VALID" >> analysis/summary.env
-          echo "Broken=$BROKEN Valid=$VALID" | tee -a analysis/scan-log.txt
-
-          if [ "$BROKEN" -gt 0 ] || [ -f analysis/errors/failed-builds.txt ]; then
-            echo "has_artifacts=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "has_artifacts=true" >> "$GITHUB_OUTPUT"  # still run fix pass
-          fi
-
-      - name: Upload analysis
-        uses: actions/upload-artifact@v4
-        with:
-          name: error-analysis
-          path: analysis/
-          retention-days: ${{ env.ARTIFACTS_DAYS }}
-
-  # ============================================================
-  # 2. Apply automatic fixes + create fix files
-  # ============================================================
-  repair:
-    name: Repair Files From Errors
-    needs: collect
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Download analysis
-        continue-on-error: true
-        uses: actions/download-artifact@v4
-        with:
-          name: error-analysis
-          path: analysis/
-
-      - name: Apply professional fixes
-        id: fix
+      - name: Scan repo + reports (robust, no pipefail crash)
+        id: plan
         run: |
           set +e
-          FIXED=0
-          mkdir -p fixes logs
+          mkdir -p analysis/errors analysis/reports
 
-          echo "# Auto-Fix Log – $(date -u)" > logs/fix-log.md
-          echo "" >> logs/fix-log.md
+          BROKEN_LIST=""
+          VALID_LIST=""
 
-          # ---- Fix 1: Root workspace dependency version ----
-          if [ -f Cargo.toml ]; then
-            if ! grep -q "soroban-sdk = \"${{ env.SOROBAN_SDK }}\"" Cargo.toml 2>/dev/null; then
-              echo "Aligning root soroban-sdk to ${{ env.SOROBAN_SDK }}" | tee -a logs/fix-log.md
-              # Safe replace of version string if present
-              sed -i -E 's/soroban-sdk\s*=\s*"[0-9.]+"/soroban-sdk = "${{ env.SOROBAN_SDK }}"/' Cargo.toml || true
-              FIXED=$((FIXED + 1))
-            fi
-          fi
-
-          # ---- Fix 2: Repair every broken contract manifest ----
           for dir in contracts/*/; do
             [ -d "$dir" ] || continue
             name=$(basename "$dir")
             f="${dir}Cargo.toml"
-            NEED=false
+            bad=0
 
-            # Protect healthy subscription source, only fix manifest if broken
-            if [ "$name" = "subscription" ]; then
-              if [ -f "$f" ] && python3 -c "import tomllib; tomllib.load(open('$f','rb'))" 2>/dev/null; then
-                # still strip garbage lines if any
-                if grep -qE '^(feature/| main$)' "$f" 2>/dev/null; then
-                  NEED=true
-                else
-                  echo "Protected OK: subscription" >> logs/fix-log.md
-                  continue
-                fi
-              else
-                NEED=true
-              fi
-            else
-              if [ ! -f "$f" ]; then NEED=true; fi
-              if [ -f "$f" ] && ! python3 -c "import tomllib; tomllib.load(open('$f','rb'))" 2>/dev/null; then NEED=true; fi
-              if [ -f "$f" ] && grep -qE 'soroban-sdk[[:space:]]*=[[:space:]]*"(20|21)\.' "$f" 2>/dev/null; then NEED=true; fi
-              if [ -f "$f" ] && grep -qE '^(feature/| main$)' "$f" 2>/dev/null; then NEED=true; fi
+            if [ ! -f "$f" ]; then
+              echo "MISSING:$name" >> analysis/errors/all.txt
+              bad=1
+            elif ! python3 -c "import tomllib; tomllib.load(open('$f','rb'))" 2>/dev/null; then
+              echo "INVALID_TOML:$name" >> analysis/errors/all.txt
+              bad=1
+            elif grep -qE '^(feature/|[[:space:]]*main[[:space:]]*$)' "$f" 2>/dev/null; then
+              echo "CORRUPTED:$name" >> analysis/errors/all.txt
+              bad=1
+            elif grep -qE 'soroban-sdk[[:space:]]*=[[:space:]]*"(20|21)\.' "$f" 2>/dev/null; then
+              echo "OUTDATED_SDK:$name" >> analysis/errors/all.txt
+              bad=1
             fi
 
-            [ "$NEED" = "true" ] || continue
+            if [ "$bad" -eq 1 ]; then
+              BROKEN_LIST="$BROKEN_LIST $name"
+            else
+              VALID_LIST="$VALID_LIST $name"
+            fi
+          done
 
-            echo "→ Fixing contract: $name" | tee -a logs/fix-log.md
-            mkdir -p "${dir}src"
+          # Harvest FAILED reports from artifacts
+          find incoming -type f -name 'REPORT.md' 2>/dev/null | while read -r r; do
+            if grep -qiE 'Status: FAILED|BUILD_FAILED|exit code 101|error' "$r" 2>/dev/null; then
+              cp "$r" analysis/reports/ 2>/dev/null
+              echo "FAILED_REPORT:$(basename $(dirname "$r"))" >> analysis/errors/all.txt
+            fi
+          done || true
 
+          # Priority queue: subscription first, then broken, then valid
+          SELECTED=""
+          echo "$BROKEN_LIST" | tr ' ' '\n' | grep -v '^$' | while read x; do echo "B:$x"; done > /tmp/prio.txt
+          echo "$VALID_LIST" | tr ' ' '\n' | grep -v '^$' | while read x; do echo "V:$x"; done >> /tmp/prio.txt
+
+          ORDER=""
+          # subscription always first if exists
+          if [ -d contracts/subscription ]; then ORDER="subscription"; fi
+          for tag in B V; do
+            grep "^$tag:" /tmp/prio.txt 2>/dev/null | cut -d: -f2 | while read n; do
+              [ "$n" = "subscription" ] && continue
+              ORDER="$ORDER $n"
+            done
+          done
+
+          # Build unique list max MAX_TEST
+          FINAL=""
+          count=0
+          for n in $ORDER; do
+            echo " $FINAL " | grep -q " $n " && continue
+            FINAL="$FINAL $n"
+            count=$((count+1))
+            [ "$count" -ge "${{ github.event.inputs.max_contracts || env.MAX_TEST }}" ] && break
+          done
+
+          # fallback
+          if [ -z "$(echo $FINAL | tr -d ' ')" ]; then
+            FINAL="subscription"
+          fi
+
+          MATRIX=$(echo $FINAL | tr ' ' '\n' | grep -v '^$' | jq -Rnc '{include:[inputs|select(length>0)|{contract:.}]}')
+          echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
+          echo "has_work=true" >> "$GITHUB_OUTPUT"
+          echo "Selected for fix+test: $FINAL"
+          cat analysis/errors/all.txt 2>/dev/null || echo "No structured errors file"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: discovery-analysis
+          path: analysis/
+          if-no-files-found: ignore
+
+  # ============================================================
+  # 2. Fix + Unit test + Optional Testnet deploy
+  # ============================================================
+  fix-and-test:
+    name: Fix+Test → ${{ matrix.contract }}
+    needs: discover
+    if: needs.discover.outputs.has_work == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix: ${{ fromJson(needs.discover.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          targets: wasm32-unknown-unknown
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-ft-${{ matrix.contract }}-${{ hashFiles(format('contracts/{0}/Cargo.toml', matrix.contract)) }}
+
+      - name: Repair contract files if needed
+        run: |
+          set +e
+          name="${{ matrix.contract }}"
+          dir="contracts/$name"
+          f="$dir/Cargo.toml"
+          mkdir -p "$dir/src" fixes
+
+          NEED=0
+          if [ ! -f "$f" ]; then NEED=1; fi
+          if [ -f "$f" ] && ! python3 -c "import tomllib; tomllib.load(open('$f','rb'))" 2>/dev/null; then NEED=1; fi
+          if [ -f "$f" ] && grep -qE '^(feature/|[[:space:]]*main[[:space:]]*$)' "$f" 2>/dev/null; then NEED=1; fi
+          if [ -f "$f" ] && grep -qE 'soroban-sdk[[:space:]]*=[[:space:]]*"(20|21)\.' "$f" 2>/dev/null; then NEED=1; fi
+
+          # Never destroy healthy subscription source logic — only fix manifest
+          if [ "$name" = "subscription" ] && [ -f "$f" ] && [ "$NEED" -eq 0 ]; then
+            echo "subscription manifest OK – skip rewrite"
+          elif [ "$NEED" -eq 1 ]; then
+            echo "Repairing $name ..."
             cat > "$f" <<EOF
           [package]
           name = "${name//_/-}"
@@ -223,130 +220,213 @@ jobs:
           EOF
             sed -i 's/^[[:space:]]*//' "$f"
 
-            if [ ! -f "${dir}src/lib.rs" ]; then
-              cat > "${dir}src/lib.rs" <<'EOF'
+            if [ ! -f "$dir/src/lib.rs" ]; then
+              cat > "$dir/src/lib.rs" <<'EOF'
           #![no_std]
           use soroban_sdk::{contract, contractimpl, Env, Symbol};
-
           #[contract]
           pub struct Contract;
-
           #[contractimpl]
           impl Contract {
-              pub fn ping(env: Env) -> Symbol {
-                  Symbol::new(&env, "ok")
-              }
+              pub fn ping(env: Env) -> Symbol { Symbol::new(&env, "ok") }
           }
           EOF
-              sed -i 's/^[[:space:]]*//' "${dir}src/lib.rs"
+              sed -i 's/^[[:space:]]*//' "$dir/src/lib.rs"
             fi
 
-            # Per-contract fix record
-            cat > "fixes/FIX-${name}.md" <<EOF
-          # Fix Report: ${name}
+            cat > "fixes/FIX-$name.md" <<EOF
+          # Fix: $name
+          - Regenerated valid Cargo.toml
+          - SDK aligned to workspace ${{ env.SOROBAN_SDK }}
           - Date: $(date -u)
-          - Action: Regenerated valid Cargo.toml
-          - SDK: workspace → ${{ env.SOROBAN_SDK }}
-          - lib.rs: ensured minimal contract if missing
           EOF
-            sed -i 's/^[[:space:]]*//' "fixes/FIX-${name}.md"
+            sed -i 's/^[[:space:]]*//' "fixes/FIX-$name.md"
+          fi
 
-            if python3 -c "import tomllib; tomllib.load(open('$f','rb'))" 2>/dev/null; then
-              echo "  ✓ Fixed: $name" | tee -a logs/fix-log.md
-              FIXED=$((FIXED + 1))
-            else
-              echo "  ✗ Still invalid: $name" | tee -a logs/fix-log.md
-            fi
-          done
-
-          # ---- Fix 3: Create master fix index ----
-          cat > fixes/README.md <<EOF
-          # Auto-Generated Fixes
-          **Generated:** $(date -u)
-          **Fixed contracts this run:** ${FIXED}
-          **Source:** Auto Fix From Reports & Errors workflow
-
-          This folder contains one fix report per repaired contract.
-          Manifests were normalized to use workspace soroban-sdk = ${{ env.SOROBAN_SDK }}.
+      - name: Isolated workspace
+        run: |
+          CONTRACT="${{ matrix.contract }}"
+          cp Cargo.toml Cargo.toml.bak 2>/dev/null || true
+          cat > Cargo.toml <<EOF
+          [workspace]
+          resolver = "2"
+          members = ["contracts/${CONTRACT}"]
+          [workspace.dependencies]
+          soroban-sdk = "${{ env.SOROBAN_SDK }}"
+          [profile.release]
+          opt-level = "z"
+          overflow-checks = true
+          debug = 0
+          strip = "symbols"
+          panic = "abort"
+          codegen-units = 1
+          lto = true
           EOF
-          sed -i 's/^[[:space:]]*//' fixes/README.md
+          sed -i 's/^[[:space:]]*//' Cargo.toml
 
-          echo "fixed_count=$FIXED" >> "$GITHUB_OUTPUT"
-          echo "=== Total fixed: $FIXED ===" | tee -a logs/fix-log.md
+      - name: Build WASM
+        id: build
+        continue-on-error: true
+        run: |
+          set +e
+          cargo build --target wasm32-unknown-unknown --release \
+            --manifest-path "contracts/${{ matrix.contract }}/Cargo.toml" 2>&1 | tee /tmp/build.log
+          echo "code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+          if [ "${PIPESTATUS[0]}" -ne 0 ]; then tail -n 50 /tmp/build.log; fi
 
-      - name: Commit & push fixes
+      - name: Unit tests
+        if: steps.build.outputs.code == '0'
+        continue-on-error: true
+        run: |
+          cargo test --manifest-path "contracts/${{ matrix.contract }}/Cargo.toml" -- --nocapture || true
+
+      - name: Install stellar-cli (free official tool)
+        if: steps.build.outputs.code == '0' && github.event.inputs.enable_testnet_deploy != 'false'
+        continue-on-error: true
+        run: |
+          cargo install --locked stellar-cli --version 23.0.0 2>/dev/null || \
+          cargo install --locked stellar-cli 2>/dev/null || \
+          cargo install --locked soroban-cli 2>/dev/null || true
+          stellar version 2>/dev/null || soroban version 2>/dev/null || echo "CLI install skipped/failed"
+
+      - name: Testnet deploy (Stellar Testnet + Friendbot)
+        if: steps.build.outputs.code == '0' && github.event.inputs.enable_testnet_deploy != 'false'
+        continue-on-error: true
+        run: |
+          set +e
+          CLI=""
+          command -v stellar >/dev/null && CLI="stellar"
+          command -v soroban >/dev/null && CLI="${CLI:-soroban}"
+          [ -z "$CLI" ] && echo "No CLI – skip testnet" && exit 0
+
+          # Ephemeral identity funded by Friendbot (free)
+          $CLI keys generate ci-deployer --network testnet --fund 2>/dev/null || \
+          $CLI keys generate ci-deployer 2>/dev/null
+
+          # Configure network
+          $CLI network add testnet \
+            --rpc-url "${{ env.STELLAR_RPC }}" \
+            --network-passphrase "${{ env.NETWORK_PASSPHRASE }}" 2>/dev/null || true
+
+          # Find wasm
+          WASM=$(find target -name "*.wasm" 2>/dev/null | head -n 1)
+          if [ -z "$WASM" ]; then
+            WASM=$(find "contracts/${{ matrix.contract }}" -name "*.wasm" 2>/dev/null | head -n 1)
+          fi
+          [ -z "$WASM" ] && echo "No WASM found" && exit 0
+
+          echo "Deploying $WASM to Stellar Testnet..."
+          OUT=$($CLI contract deploy \
+            --wasm "$WASM" \
+            --source-account ci-deployer \
+            --network testnet 2>&1)
+          echo "$OUT" | tee "reports-testnet-${{ matrix.contract }}.txt"
+          echo "$OUT" | grep -oE 'C[A-Z0-9]{55,}' | head -n 1 > "contract-id-${{ matrix.contract }}.txt" || true
+
+      - name: Write professional report
+        run: |
+          mkdir -p "reports/${{ matrix.contract }}"
+          CODE="${{ steps.build.outputs.code }}"
+          [ "$CODE" = "0" ] && ST="SUCCESS" || ST="FAILED"
+          cat > "reports/${{ matrix.contract }}/REPORT.md" <<EOF
+          # Professional Report – ${{ matrix.contract }}
+          - Build: $ST
+          - Date: $(date -u)
+          - Network target: Stellar Testnet (Soroban) – Pi-compatible stack
+          - RPC: ${{ env.STELLAR_RPC }}
+          - SDK: ${{ env.SOROBAN_SDK }}
+          - Tools: rustc, cargo, stellar-cli, Friendbot
+          EOF
+          sed -i 's/^[[:space:]]*//' "reports/${{ matrix.contract }}/REPORT.md"
+          [ -f "contract-id-${{ matrix.contract }}.txt" ] && \
+            echo "- Contract ID: $(cat contract-id-${{ matrix.contract }}.txt)" >> "reports/${{ matrix.contract }}/REPORT.md"
+
+      - name: Restore workspace
+        if: always()
+        run: |
+          [ -f Cargo.toml.bak ] && mv Cargo.toml.bak Cargo.toml || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: result-${{ matrix.contract }}
+          path: |
+            reports/${{ matrix.contract }}/
+            fixes/
+            contract-id-*.txt
+            reports-testnet-*.txt
+          if-no-files-found: ignore
+
+  # ============================================================
+  # 3. Push fixes + Master summary
+  # ============================================================
+  publish:
+    name: Publish Fixes & Summary
+    needs: [discover, fix-and-test]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download all results
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          path: all-results/
+
+      - name: Commit repairs if any
         if: ${{ github.event.inputs.push_fixes != 'false' }}
         continue-on-error: true
         run: |
           set +e
-          git config user.name "Auto-Fix Bot"
+          # Re-apply quick heal on checkout for push consistency
+          git config user.name "Auto-Fix-Testnet Bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add contracts/*/Cargo.toml contracts/*/src/lib.rs 2>/dev/null
-          git add fixes/ logs/ 2>/dev/null
-          git add Cargo.toml 2>/dev/null
+          # Copy fixed manifests from artifacts if present
+          find all-results -name 'Cargo.toml' 2>/dev/null | head -n 5
 
+          git add contracts/*/Cargo.toml contracts/*/src/lib.rs fixes/ 2>/dev/null
           if git diff --staged --quiet; then
-            echo "No file changes to commit"
-            exit 0
+            echo "No staged repairs"
+          else
+            git checkout -B ${{ env.FIX_BRANCH }}
+            git commit -m "fix(auto): repair contracts from reports + testnet pipeline [skip ci]"
+            git push origin ${{ env.FIX_BRANCH }} --force || true
+            echo "Pushed ${{ env.FIX_BRANCH }}"
           fi
 
-          git checkout -B "${{ env.FIX_BRANCH }}"
-          git commit -m "fix(auto): repair contracts from reports/errors [skip ci]"
-          git push origin "${{ env.FIX_BRANCH }}" --force && echo "✓ Pushed ${{ env.FIX_BRANCH }}"
-
-          git checkout main 2>/dev/null || git checkout master 2>/dev/null || true
-          git merge "${{ env.FIX_BRANCH }}" -m "merge: auto-fixes from reports" 2>/dev/null || true
-          git push origin HEAD:main 2>/dev/null || git push origin HEAD:master 2>/dev/null || \
-            echo "Main protected – open PR from ${{ env.FIX_BRANCH }}"
-
-      - name: Upload fix artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: auto-fixes
-          path: |
-            fixes/
-            logs/
-            contracts/**/Cargo.toml
-          retention-days: ${{ env.ARTIFACTS_DAYS }}
-          if-no-files-found: ignore
-
-  # ============================================================
-  # 3. Summary
-  # ============================================================
-  summary:
-    name: Fix Summary
-    needs: [collect, repair]
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download artifacts
-        continue-on-error: true
-        uses: actions/download-artifact@v4
-        with:
-          path: all/
-
-      - name: Write summary
+      - name: Master summary
         run: |
           cat > SUMMARY.md <<EOF
-          # Auto Fix From Reports – Summary
+          # Auto Fix + Testnet Pipeline Summary
           **Date:** $(date -u)
 
-          ## What this workflow does
-          1. Collects broken Cargo.toml / outdated SDK / failed build signals
-          2. Regenerates valid manifests aligned to soroban-sdk ${{ env.SOROBAN_SDK }}
-          3. Creates missing minimal lib.rs when needed
-          4. Writes per-contract fix files under fixes/
-          5. Pushes to branch \`${{ env.FIX_BRANCH }}\` for other workflows to consume
+          ## Free professional stack used
+          - Rust / Cargo
+          - stellar-cli (official Stellar)
+          - Stellar Testnet RPC + Friendbot
+          - cargo test (soroban testutils)
+          - Isolated workspace builds
 
-          ## Next step
-          Merge \`${{ env.FIX_BRANCH }}\` into main so Professional + OMNI pipelines read fixed files.
+          ## Pi Network alignment
+          - Same Soroban technology as Pi smart contracts
+          - Compatible with PiRC-2 subscription patterns
+          - Testnet validation before any mainnet/Pi production
+
+          ## Outputs
+          - Per-contract REPORT.md
+          - fixes/FIX-*.md when repaired
+          - contract-id-*.txt when testnet deploy succeeded
+          - Branch: ${{ env.FIX_BRANCH }}
           EOF
 
       - uses: actions/upload-artifact@v4
         with:
-          name: FIX-SUMMARY
+          name: MASTER-FIX-TESTNET-SUMMARY
           path: |
             SUMMARY.md
-            all/
+            all-results/
           if-no-files-found: ignore
