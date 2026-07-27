@@ -1,18 +1,22 @@
 #![no_std]
-use soroban_sdk::{contract, contractimpl, Address, Env};
+use soroban_sdk::{contract, contractimpl, Address, Env, BytesN, String, symbol_short};
 
-/// V7 Generative Implementation for PiRC-101
-/// Code parameters strictly generated from document text requirements.
 #[contract]
-pub struct PiRC101Contract;
+pub struct Contract;
 
 #[contractimpl]
-impl PiRC101Contract {
-    pub fn execute_generated_rules(env: Env, caller: Address, amount: i128) -> bool {
+impl Contract {
+    pub fn initialize(env: Env, admin: Address) {
+        admin.require_auth();
+        env.storage().instance().set(&symbol_short!("admin"), &admin);
+    }
+
+    pub fn execute(env: Env, caller: Address, action: String, payload: BytesN<32>) -> bool {
         caller.require_auth();
-        // [V7 INTELLIGENT RULE] Hardware Scan Requirement Detected
-        let hardware_verified: bool = env.storage().instance().get(&caller).unwrap_or(false);
-        if !hardware_verified { panic!("Physical hardware interaction missing!"); }
         true
+    }
+
+    pub fn ping(env: Env) -> String {
+        String::from_str(&env, "ok")
     }
 }
