@@ -1,8 +1,8 @@
-# Standard 5 Summary
+# Standard 20 Summary
 
 ```mermaid
 graph LR
-  A[Initiate 5] --> B{Atomic Swap HTLC}
-  B --> C[Success: Step 22: Settlement]
+  A[Initiate 20] --> B{Singleton Indexing}
+  B --> C[Success: Step 20: Protocol V3]
   B --> D[Revert: Justice Engine]
 ```

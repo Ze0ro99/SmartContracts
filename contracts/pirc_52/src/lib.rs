@@ -1,16 +1,34 @@
 #![no_std]
-use soroban_sdk::{contract, contractimpl, Address, Env, BytesN};
+use soroban_sdk::{contract, contractimpl, contracttype, Address, Env, String, BytesN};
 
-/// Official Implementation for PiRC-52
-/// Built for physical environment integration and hybrid verification.
+#[contracttype]
+#[derive(Clone)]
+pub enum DataKey {
+    Admin,
+    Identity(Address),
+}
+
 #[contract]
-pub struct PiRC52Contract;
+pub struct Contract;
 
 #[contractimpl]
-impl PiRC52Contract {
-    pub fn execute_physical_hook(env: Env, user: Address, hardware_signature: BytesN<64>) -> bool {
-        user.require_auth();
-        // Validation logic linking physical hardware relay to on-chain state
+impl Contract {
+    pub fn initialize(env: Env, admin: Address) {
+        admin.require_auth();
+        env.storage().instance().set(&DataKey::Admin, &admin);
+    }
+
+    pub fn register_identity(env: Env, caller: Address, did: String, metadata_hash: BytesN<32>) -> bool {
+        caller.require_auth();
+        env.storage().persistent().set(&DataKey::Identity(caller.clone()), &(did, metadata_hash));
         true
+    }
+
+    pub fn get_identity(env: Env, address: Address) -> Option<(String, BytesN<32>)> {
+        env.storage().persistent().get(&DataKey::Identity(address))
+    }
+
+    pub fn ping(env: Env) -> String {
+        String::from_str(&env, "pirc-identity-ok")
     }
 }

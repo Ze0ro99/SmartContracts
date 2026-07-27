@@ -1,18 +1,44 @@
 #![no_std]
-use soroban_sdk::{contract, contractimpl, Address, Env};
+use soroban_sdk::{contract, contractimpl, contracttype, Address, Env, String, BytesN};
 
-/// V7 Generative Implementation for PiRC-200
-/// Code parameters strictly generated from document text requirements.
+#[contracttype]
+#[derive(Clone)]
+pub enum DataKey {
+    Admin,
+    Asset(BytesN<32>),
+    Owner(BytesN<32>),
+}
+
 #[contract]
-pub struct PiRC200Contract;
+pub struct Contract;
 
 #[contractimpl]
-impl PiRC200Contract {
-    pub fn execute_generated_rules(env: Env, caller: Address, amount: i128) -> bool {
+impl Contract {
+    pub fn initialize(env: Env, admin: Address) {
+        admin.require_auth();
+        env.storage().instance().set(&DataKey::Admin, &admin);
+    }
+
+    pub fn register_asset(env: Env, caller: Address, asset_id: BytesN<32>, metadata: String) -> bool {
         caller.require_auth();
-        // [V7 INTELLIGENT RULE] Hardware Scan Requirement Detected
-        let hardware_verified: bool = env.storage().instance().get(&caller).unwrap_or(false);
-        if !hardware_verified { panic!("Physical hardware interaction missing!"); }
+        env.storage().persistent().set(&DataKey::Asset(asset_id.clone()), &metadata);
+        env.storage().persistent().set(&DataKey::Owner(asset_id), &caller);
         true
+    }
+
+    pub fn transfer_asset(env: Env, from: Address, to: Address, asset_id: BytesN<32>) -> bool {
+        from.require_auth();
+        let owner: Address = env.storage().persistent().get(&DataKey::Owner(asset_id.clone())).unwrap();
+        if owner != from { return false; }
+        env.storage().persistent().set(&DataKey::Owner(asset_id), &to);
+        true
+    }
+
+    pub fn get_owner(env: Env, asset_id: BytesN<32>) -> Option<Address> {
+        env.storage().persistent().get(&DataKey::Owner(asset_id))
+    }
+
+    pub fn ping(env: Env) -> String {
+        String::from_str(&env, "pirc-rwa-ok")
     }
 }
