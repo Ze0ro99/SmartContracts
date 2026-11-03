@@ -296,3 +296,6 @@ impl EconomicSettlement {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod test;
