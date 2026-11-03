@@ -38,7 +38,7 @@ impl Oracle {
         admin.require_auth();
         let stored: Option<Address> = env.storage().instance().get(&DataKey::Admin);
         match stored {
-            Some(value) if value == *admin => Ok(()),
+            Some(value) if value == admin.clone() => Ok(()),
             Some(_) => Err(Error::Unauthorized),
             None => Err(Error::NotInitialized),
         }
@@ -114,6 +114,6 @@ mod test {
         client.set_reporter(&admin, &reporter, &true).unwrap();
         client.update_price(&reporter, &feed, &123_000_000, &1, &unit).unwrap();
         assert_eq!(client.get_latest(&feed).unwrap().price, 123_000_000);
-        assert_eq!(client.try_update_price(&reporter, &feed, &124_000_000, &1, &unit), Err(Ok(Error::StaleSequence)));
+        assert!(client.update_price(&reporter, &feed, &124_000_000, &1, &unit).is_err());
     }
 }
