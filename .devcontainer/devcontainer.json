@@ -1,0 +1,18 @@
+{
+  "name": "PiRC Soroban Contracts",
+  "build": {
+    "dockerfile": "../Dockerfile",
+    "context": ".."
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "rust-lang.rust-analyzer",
+        "ms-python.python",
+        "tamasfe.even-better-toml"
+      ]
+    }
+  },
+  "postCreateCommand": "make bootstrap",
+  "remoteUser": "root"
+}
