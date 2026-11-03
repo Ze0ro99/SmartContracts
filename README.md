@@ -37,5 +37,7 @@ Pin Soroban SDK and toolchain versions; enforce explicit authorization; prevent 
 - [Economic vector validator](scripts/test_economic_vectors.py)
 - [Soroban economic parity gate](docs/ECONOMIC_SETTLEMENT_PARITY_GATE.md)
 - [Economic implementation plan](docs/ECONOMIC_ENGINE_IMPLEMENTATION_PLAN.md)
+- [Economic settlement contract implementation](docs/ECONOMIC_SETTLEMENT_CONTRACT.md)
+- Soroban settlement crate: `contracts/economic_settlement`
 - [Contract security test matrix](docs/SECURITY_TEST_MATRIX.md)
 - CI: `.github/workflows/economic-contract-validation.yml`
