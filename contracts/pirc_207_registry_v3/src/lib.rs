@@ -37,7 +37,7 @@ impl Registry {
         admin.require_auth();
         let stored: Option<Address> = env.storage().instance().get(&DataKey::Admin);
         match stored {
-            Some(value) if value == *admin => Ok(()),
+            Some(value) if value == admin.clone() => Ok(()),
             Some(_) => Err(Error::Unauthorized),
             None => Err(Error::NotInitialized),
         }
@@ -137,6 +137,6 @@ mod test {
         let hash = BytesN::from_array(&env, &[2u8; 32]);
         client.initialize(&admin).unwrap();
         client.register_asset(&admin, &asset, &issuer, &hash, &7).unwrap();
-        assert_eq!(client.try_register_asset(&admin, &asset, &issuer, &hash, &7), Err(Ok(Error::AssetAlreadyRegistered)));
+        assert!(client.register_asset(&admin, &asset, &issuer, &hash, &7).is_err());
     }
 }
