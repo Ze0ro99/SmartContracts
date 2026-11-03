@@ -51,3 +51,5 @@ jobs:
         run: cargo check --workspace --locked
       - name: Run workspace tests
         run: cargo test --workspace --locked
+      - name: Build canonical settlement WASM
+        run: cargo build --locked --release --target wasm32-unknown-unknown -p pirc-economic-settlement
