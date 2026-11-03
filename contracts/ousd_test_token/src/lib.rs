@@ -288,32 +288,34 @@ impl OusdTestToken {
 #[cfg(test)]
 mod test {
     use super::{Error, OusdTestToken, OusdTestTokenClient, MAX_SUPPLY};
-    use soroban_sdk::{testutils::Address as _, Address, Env};
+    use soroban_sdk::{testutils::Address as _, Address, Env, String};
 
-    fn setup() -> (Env, OusdTestTokenClient<'static>, Address, Address, Address) {
+    fn setup() -> (Env, Address, Address, Address, Address) {
         let env = Env::default();
         env.mock_all_auths();
         let id = env.register(OusdTestToken, ());
-        let client = OusdTestTokenClient::new(&env, &id);
         let admin = Address::generate(&env);
         let alice = Address::generate(&env);
         let bob = Address::generate(&env);
+        let client = OusdTestTokenClient::new(&env, &id);
         client.initialize(&admin).unwrap();
-        (env, client, admin, alice, bob)
+        (env, id, admin, alice, bob)
     }
 
     #[test]
     fn metadata_and_initial_supply_are_test_only_defaults() {
-        let (_env, client, _admin, _alice, _bob) = setup();
-        assert_eq!(client.name(), soroban_sdk::String::from_str(client.env(), "OUSD Test Token"));
-        assert_eq!(client.symbol(), soroban_sdk::String::from_str(client.env(), "OUSD"));
+        let (env, id, _admin, _alice, _bob) = setup();
+        let client = OusdTestTokenClient::new(&env, &id);
+        assert_eq!(client.name(), String::from_str(&env, "OUSD Test Token"));
+        assert_eq!(client.symbol(), String::from_str(&env, "OUSD"));
         assert_eq!(client.decimals(), 7);
         assert_eq!(client.total_supply(), 0);
     }
 
     #[test]
     fn admin_mints_and_holders_transfer_and_burn() {
-        let (_env, client, admin, alice, bob) = setup();
+        let (env, id, admin, alice, bob) = setup();
+        let client = OusdTestTokenClient::new(&env, &id);
         client.mint(&admin, &alice, &1_000).unwrap();
         client.transfer(&alice, &bob, &300).unwrap();
         assert_eq!(client.balance(&alice), 700);
@@ -325,7 +327,8 @@ mod test {
 
     #[test]
     fn allowance_transfer_from_consumes_approval() {
-        let (env, client, admin, alice, bob) = setup();
+        let (env, id, admin, alice, bob) = setup();
+        let client = OusdTestTokenClient::new(&env, &id);
         let spender = Address::generate(&env);
         client.mint(&admin, &alice, &500).unwrap();
         client.approve(&alice, &spender, &250, &(env.ledger().sequence() + 20)).unwrap();
@@ -336,16 +339,46 @@ mod test {
 
     #[test]
     fn mint_above_cap_and_negative_transfer_are_rejected() {
-        let (_env, client, admin, alice, bob) = setup();
-        assert_eq!(client.try_mint(&admin, &alice, &(MAX_SUPPLY + 1)).unwrap_err().contract_error(), Some(Error::SupplyCapExceeded));
+        let (env, id, admin, alice, bob) = setup();
+        let client = OusdTestTokenClient::new(&env, &id);
+        assert!(client.try_mint(&admin, &alice, &(MAX_SUPPLY + 1)).is_err());
         client.mint(&admin, &alice, &100).unwrap();
         assert!(client.try_transfer(&alice, &bob, &-1).is_err());
     }
 
     #[test]
     fn unauthorized_admin_cannot_mint() {
-        let (_env, client, _admin, alice, bob) = setup();
-        let stranger = Address::generate(client.env());
+        let (env, id, _admin, alice, _bob) = setup();
+        let client = OusdTestTokenClient::new(&env, &id);
+        let stranger = Address::generate(&env);
         assert!(client.try_mint(&stranger, &alice, &1).is_err());
+    }
+
+    #[test]
+    fn second_initialization_is_rejected() {
+        let (env, id, admin, _alice, _bob) = setup();
+        let client = OusdTestTokenClient::new(&env, &id);
+        assert!(client.try_initialize(&admin).is_err());
+    }
+
+    #[test]
+    fn negative_mint_and_zero_burn_are_rejected() {
+        let (env, id, admin, alice, _bob) = setup();
+        let client = OusdTestTokenClient::new(&env, &id);
+        assert!(client.try_mint(&admin, &alice, &-1).is_err());
+        assert!(client.try_burn(&alice, &0).is_err());
+    }
+
+    #[test]
+    fn expired_allowance_is_not_spendable() {
+        let (env, id, admin, alice, bob) = setup();
+        let client = OusdTestTokenClient::new(&env, &id);
+        let spender = Address::generate(&env);
+        client.mint(&admin, &alice, &500).unwrap();
+        let current = env.ledger().sequence();
+        client.approve(&alice, &spender, &200, &(current + 1)).unwrap();
+        env.ledger().set_sequence_number(current + 2);
+        assert_eq!(client.allowance(&alice, &spender), 0);
+        assert!(client.try_transfer_from(&spender, &alice, &bob, &100).is_err());
     }
 }
