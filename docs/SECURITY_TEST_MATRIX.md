@@ -21,11 +21,14 @@ This matrix defines minimum tests for reference contracts. A row marked REQUIRED
 | Settlement | Deductions exceed revenue | Underfunded period rejected | Unit test |
 | Settlement | Duplicate period submission | Replay rejected | Unit test |
 | Settlement | Allocation rounding creates/destroys units | Sum allocations equals distributable | Property test |
+| Settlement | Rejected duplicate/over-budget allocation mutates state | Period total and participant record remain unchanged | Unit test |
+| Settlement | Negative revenue or deductions enter accounting | Period proposal rejected | Unit test |
 | Settlement | Client controls distributable | Contract derives/checks authoritative inputs | Integration test |
 | Storage | TTL expiry removes critical state | TTL renewal or explicit expiry behavior tested | Testnet/local test |
 | Upgrade | Storage layout changes incompatibly | Migration or version rejection tested | Upgrade test |
 | Events | Event differs from stored state | Event/readback reconciliation passes | Integration test |
 | Arithmetic | Overflow or precision truncation | Checked arithmetic / typed error | Unit test |
+| Arithmetic | Deduction aggregation overflows i128 | Proposal returns typed arithmetic error without storing a period | Unit test |
 | Operations | Unreviewed crate deployed | Explicit release allowlist required | Workflow test |
 
 ## Required test conventions
@@ -34,6 +37,7 @@ This matrix defines minimum tests for reference contracts. A row marked REQUIRED
 - Negative tests assert state remains unchanged.
 - Do not use `mock_all_auths` as the only authorization test; include real auth-context or explicit unauthorized cases.
 - Property tests should vary weights and amounts and assert conservation, monotonicity, and deterministic output.
+- Rejected settlement mutations must assert both aggregate state and participant-level storage remain unchanged.
 - Pin SDK and toolchain versions. Capture compiler and test output in CI.
 - A local unit test does not establish deployed behavior.
 - A successful WASM build does not establish security, correctness, or economic backing.
