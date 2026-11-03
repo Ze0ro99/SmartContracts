@@ -1,5 +1,6 @@
 {
   "processed": [
+    "ousd_test_token",
     "pirc_1",
     "pirc_10",
     "pirc_100",
@@ -35,6 +36,7 @@
     "pirc_205",
     "pirc_206",
     "pirc_207",
+    "pirc_207_registry_v3",
     "pirc_208",
     "pirc_209",
     "pirc_210",
@@ -42,6 +44,7 @@
     "pirc_212",
     "pirc_213",
     "pirc_214",
+    "pirc_214_oracle_v2",
     "pirc_215",
     "pirc_216",
     "pirc_217",
@@ -53,6 +56,7 @@
     "pirc_223",
     "pirc_224",
     "pirc_225",
+    "pirc_225_por_v2",
     "pirc_226",
     "pirc_227",
     "pirc_228",
@@ -65,6 +69,7 @@
     "pirc_235",
     "pirc_236",
     "pirc_237",
+    "pirc_237_ai_oracle",
     "pirc_238",
     "pirc_239",
     "pirc_240",
@@ -106,5 +111,5 @@
     "pirc_99",
     "subscription"
   ],
-  "last_run": "2026-11-03T11:43:38Z"
+  "last_run": "2026-11-03T15:49:38Z"
 }

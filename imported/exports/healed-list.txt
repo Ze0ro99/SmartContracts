@@ -1,3 +1,4 @@
+contracts/ousd_test_token/Cargo.toml
 contracts/pirc_1/Cargo.toml
 contracts/pirc_10/Cargo.toml
 contracts/pirc_100/Cargo.toml
@@ -33,6 +34,7 @@ contracts/pirc_204/Cargo.toml
 contracts/pirc_205/Cargo.toml
 contracts/pirc_206/Cargo.toml
 contracts/pirc_207/Cargo.toml
+contracts/pirc_207_registry_v3/Cargo.toml
 contracts/pirc_208/Cargo.toml
 contracts/pirc_209/Cargo.toml
 contracts/pirc_210/Cargo.toml
@@ -40,6 +42,7 @@ contracts/pirc_211/Cargo.toml
 contracts/pirc_212/Cargo.toml
 contracts/pirc_213/Cargo.toml
 contracts/pirc_214/Cargo.toml
+contracts/pirc_214_oracle_v2/Cargo.toml
 contracts/pirc_215/Cargo.toml
 contracts/pirc_216/Cargo.toml
 contracts/pirc_217/Cargo.toml
@@ -51,6 +54,7 @@ contracts/pirc_222/Cargo.toml
 contracts/pirc_223/Cargo.toml
 contracts/pirc_224/Cargo.toml
 contracts/pirc_225/Cargo.toml
+contracts/pirc_225_por_v2/Cargo.toml
 contracts/pirc_226/Cargo.toml
 contracts/pirc_227/Cargo.toml
 contracts/pirc_228/Cargo.toml
@@ -63,6 +67,7 @@ contracts/pirc_234/Cargo.toml
 contracts/pirc_235/Cargo.toml
 contracts/pirc_236/Cargo.toml
 contracts/pirc_237/Cargo.toml
+contracts/pirc_237_ai_oracle/Cargo.toml
 contracts/pirc_238/Cargo.toml
 contracts/pirc_239/Cargo.toml
 contracts/pirc_240/Cargo.toml
