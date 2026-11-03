@@ -219,7 +219,7 @@ impl OusdTestToken {
         if balance < amount {
             return Err(Error::InsufficientBalance);
         }
-        let supply = Self::total_supply(&env);
+        let supply = Self::read_total_supply(&env);
         let next_balance = balance.checked_sub(amount).ok_or(Error::ArithmeticError)?;
         let next_supply = supply.checked_sub(amount).ok_or(Error::ArithmeticError)?;
         Self::set_balance(&env, &from, next_balance);
@@ -248,7 +248,7 @@ impl OusdTestToken {
         }
         value.amount = value.amount.checked_sub(amount).ok_or(Error::ArithmeticError)?;
         let next_balance = balance.checked_sub(amount).ok_or(Error::ArithmeticError)?;
-        let next_supply = Self::total_supply(&env).checked_sub(amount).ok_or(Error::ArithmeticError)?;
+        let next_supply = Self::read_total_supply(&env).checked_sub(amount).ok_or(Error::ArithmeticError)?;
         env.storage().persistent().set(&key, &value);
         Self::set_balance(&env, &from, next_balance);
         Self::set_total_supply(&env, next_supply);
@@ -261,7 +261,7 @@ impl OusdTestToken {
     }
 
     pub fn total_supply(env: Env) -> i128 {
-        Self::total_supply(&env)
+        Self::read_total_supply(&env)
     }
 
     pub fn decimals(_env: Env) -> u32 {
