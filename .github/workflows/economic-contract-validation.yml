@@ -5,6 +5,13 @@ on:
     paths:
       - "Cargo.toml"
       - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - "Dockerfile"
+      - ".dockerignore"
+      - "Makefile"
+      - ".devcontainer/**"
+      - "docs/LOCAL_DEVELOPMENT_ENVIRONMENT.md"
+      - "docs/DEVELOPMENT_COMMANDS.md"
       - "contracts/**"
       - "fixtures/economic-engine-vectors.json"
       - "scripts/test_economic_vectors.py"
@@ -36,7 +43,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.90.0
       - uses: Swatinem/rust-cache@v2
       - name: Check formatting
         run: cargo fmt --all -- --check
