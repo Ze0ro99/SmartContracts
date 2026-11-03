@@ -17,5 +17,16 @@ See [Contract Coverage and Security Audit](docs/CONTRACT_COVERAGE_AND_SECURITY_A
 
 These reference modules require compilation, test execution, security review and network-specific verification before use. They are not deployed.
 
+## Standards coverage and new references
+
+- [Cross-repository standards coverage matrix](docs/PIRC_STANDARDS_COVERAGE_MATRIX.md)
+- [Contract coverage and security audit](docs/CONTRACT_COVERAGE_AND_SECURITY_AUDIT.md)
+- PiRC-207 Registry V3 reference crate: `contracts/pirc_207_registry_v3`
+- PiRC-214 Oracle V2 reference crate: `contracts/pirc_214_oracle_v2`
+- PiRC-225 Proof-of-Reserves V2 reference crate: `contracts/pirc_225_por_v2`
+- PiRC-237 AI Oracle reference crate: `contracts/pirc_237_ai_oracle`
+
+These modules are independent reference crates. They require CI compilation, test review and security review; the AI proof hash is a commitment only, not ZK verification.
+
 ## Engineering requirements
 Pin Soroban SDK and toolchain versions; enforce explicit authorization; prevent duplicate initialization; use checked arithmetic and documented atomic units; test success, failure, boundary and adversarial paths; emit lifecycle events; and require independent review before production deployment.
