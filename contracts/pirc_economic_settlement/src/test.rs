@@ -339,7 +339,7 @@ fn settled_period_rejects_late_allocations() {
     let env = Env::default();
     let period_id = id(&env, 46);
     let (_, operator, distributable) = setup_period(&env, period_id.clone());
-    EconomicSettlement::approve_period(env.clone(), period_id.clone());
+    EconomicSettlement::approve_period(env.clone(), period_id.clone()).unwrap();
     let participant = Address::generate(&env);
     EconomicSettlement::record_allocation(
         env.clone(),
