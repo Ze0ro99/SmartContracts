@@ -1,5 +1,21 @@
-# pi-smartcontracts
+# PiRC Smart Contracts
 
-## Sovereign Hybrid Ecosystem Integration
+Soroban contract workspace for PiRC proposal implementations and reference modules.
 
-See [Contract Architecture](docs/CONTRACT_ARCHITECTURE.md) and [Seven-Layer Contract Mapping](docs/SEVEN_LAYER_CONTRACT_MAPPING.md). Contract implementation must be tied to a pinned PiRC specification revision and must pass deterministic tests, security review, and network-specific deployment verification before production claims.
+## Repository role
+This repository owns executable Soroban contract code, public interfaces, storage schemas, contract-level tests and reproducible build configuration. Normative requirements remain in PiRC; application/API integration remains in Unity Sphere.
+
+## Current audit status
+The default branch contains 106 Rust source files but only four distinct Rust file contents by Git blob SHA. Large groups of numbered contract crates reuse generic identity or asset templates. These are scaffolds, not proof that every numbered standard is independently implemented.
+
+See [Contract Coverage and Security Audit](docs/CONTRACT_COVERAGE_AND_SECURITY_AUDIT.md).
+
+## Integration branch reference modules
+- `contracts/pirc_207_registry_v3` — admin-controlled asset metadata registry.
+- `contracts/pirc_214_oracle_v2` — authenticated reporter observations with monotonic sequence and ledger timestamp.
+- `contracts/pirc_225_por_v2` — auditor-controlled reserve/liability attestations.
+
+These reference modules require compilation, test execution, security review and network-specific verification before use. They are not deployed.
+
+## Engineering requirements
+Pin Soroban SDK and toolchain versions; enforce explicit authorization; prevent duplicate initialization; use checked arithmetic and documented atomic units; test success, failure, boundary and adversarial paths; emit lifecycle events; and require independent review before production deployment.
