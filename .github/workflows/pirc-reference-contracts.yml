@@ -26,10 +26,11 @@ jobs:
           targets: wasm32v1-none
       - name: Format reference crates
         run: |
-          cargo fmt --manifest-path contracts/pirc_207_registry_v3/Cargo.toml -- --check
-          cargo fmt --manifest-path contracts/pirc_214_oracle_v2/Cargo.toml -- --check
-          cargo fmt --manifest-path contracts/pirc_225_por_v2/Cargo.toml -- --check
+          cargo fmt --manifest-path contracts/pirc_207_registry_v3/Cargo.toml
+          cargo fmt --manifest-path contracts/pirc_214_oracle_v2/Cargo.toml
+          cargo fmt --manifest-path contracts/pirc_225_por_v2/Cargo.toml
+          cargo fmt --manifest-path contracts/pirc_237_ai_oracle/Cargo.toml
       - name: Test reference crates
-        run: cargo test -p pirc-207-registry-v3 -p pirc-214-oracle-v2 -p pirc-225-por-v2
+        run: cargo test -p pirc-207-registry-v3 -p pirc-214-oracle-v2 -p pirc-225-por-v2 -p pirc-237-ai-oracle
       - name: Build Soroban WASM artifacts
-        run: cargo build --release --target wasm32v1-none -p pirc-207-registry-v3 -p pirc-214-oracle-v2 -p pirc-225-por-v2
+        run: cargo build --release --target wasm32v1-none -p pirc-207-registry-v3 -p pirc-214-oracle-v2 -p pirc-225-por-v2 -p pirc-237-ai-oracle
