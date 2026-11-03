@@ -1,0 +1,94 @@
+{
+  "schema_version": "1.0.0",
+  "units": {
+    "amount": "integer atomic units; never floating point",
+    "ratio": "basis points"
+  },
+  "cases": [
+    {
+      "id": "net-distributable",
+      "input": {
+        "collected_revenue": 1000,
+        "operating_costs": 200,
+        "tax_and_statutory": 100,
+        "refunds_and_due_liabilities": 100,
+        "reserve_replenishment": 50,
+        "approved_commitments": 50
+      },
+      "expected": {
+        "distributable": 500
+      }
+    },
+    {
+      "id": "largest-remainder-equal-weights",
+      "input": {
+        "amount": 10,
+        "participants": [
+          {
+            "id": "Alice",
+            "weight": 1
+          },
+          {
+            "id": "Bob",
+            "weight": 1
+          },
+          {
+            "id": "Carol",
+            "weight": 1
+          }
+        ]
+      },
+      "expected": {
+        "allocations": [
+          {
+            "id": "Alice",
+            "amount": 4
+          },
+          {
+            "id": "Bob",
+            "amount": 3
+          },
+          {
+            "id": "Carol",
+            "amount": 3
+          }
+        ],
+        "sum": 10
+      }
+    },
+    {
+      "id": "reserve-coverage",
+      "input": {
+        "reserve": 250,
+        "liabilities": 200
+      },
+      "expected": {
+        "coverage_bps": 12500
+      }
+    },
+    {
+      "id": "supply-growth",
+      "input": {
+        "previous_supply": 20000,
+        "net_issuance": 1000
+      },
+      "expected": {
+        "growth_bps": 500
+      }
+    },
+    {
+      "id": "underfunded-period",
+      "input": {
+        "collected_revenue": 100,
+        "operating_costs": 70,
+        "tax_and_statutory": 20,
+        "refunds_and_due_liabilities": 20,
+        "reserve_replenishment": 0,
+        "approved_commitments": 0
+      },
+      "expected": {
+        "error": "UNDERFUNDED_PERIOD"
+      }
+    }
+  ]
+}
