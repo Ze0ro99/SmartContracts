@@ -1,0 +1,44 @@
+name: Economic Contract Validation
+
+on:
+  pull_request:
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "contracts/**"
+      - "fixtures/economic-engine-vectors.json"
+      - "scripts/test_economic_vectors.py"
+      - "docs/ECONOMIC_SETTLEMENT_PARITY_GATE.md"
+      - ".github/workflows/economic-contract-validation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: economic-contract-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fixture-validation:
+    name: Validate shared economic vectors
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Validate canonical fixture arithmetic
+        run: python scripts/test_economic_vectors.py
+
+  soroban-workspace-tests:
+    name: Compile and test Soroban workspace
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Compile workspace
+        run: cargo check --workspace --locked
+      - name: Run workspace tests
+        run: cargo test --workspace --locked
