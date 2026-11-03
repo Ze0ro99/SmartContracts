@@ -47,3 +47,9 @@ Pin Soroban SDK and toolchain versions; enforce explicit authorization; prevent 
 - [Economic Execution Flow](docs/ECONOMIC_EXECUTION_FLOW.md)
 
 These documents specify implementation gates for contract-issued assets and revenue-funded settlement. They do not grant control over native Pi or authorize deployment, minting, burning, redemption or treasury operations.
+
+## Factory, OUSD, Oracle and Cryptographic Gates
+- [RAW Factory, OUSD, Oracle and Cryptographic Execution Gates](docs/RAW_FACTORY_OUSD_ORACLE_AND_CRYPTO_GATES.md)
+- [Contract Capability and Evidence Matrix](docs/CONTRACT_CAPABILITY_AND_EVIDENCE_MATRIX.md)
+
+OUSD remains a test-only token reference without a peg, reserve or redemption. Oracle and AI records require independent validation; a proof hash is not a proof verifier. RAW factory and physical evidence scaffolds are not production deployers or possession verification. Production use requires network-specific tests, security review and read-back evidence.
