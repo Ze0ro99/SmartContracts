@@ -6,6 +6,7 @@ on:
       - 'contracts/pirc_207_registry_v3/**'
       - 'contracts/pirc_214_oracle_v2/**'
       - 'contracts/pirc_225_por_v2/**'
+      - 'contracts/pirc_237_ai_oracle/**'
       - 'Cargo.toml'
       - 'Cargo.lock'
       - '.github/workflows/pirc-reference-contracts.yml'
