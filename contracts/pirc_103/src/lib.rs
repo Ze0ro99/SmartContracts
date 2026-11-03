@@ -136,6 +136,24 @@ mod test {
     }
 
     #[test]
+    fn transfer_rejects_destination_overflow_without_debiting_sender() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let id = env.register(Contract, ());
+        let client = ContractClient::new(&env, &id);
+        let admin = Address::generate(&env);
+        let sender = Address::generate(&env);
+        let receiver = Address::generate(&env);
+
+        client.initialize(&admin);
+        client.mint(&sender, &100);
+        client.mint(&receiver, &i128::MAX);
+        assert!(!client.transfer(&sender, &receiver, &1));
+        assert_eq!(client.balance_of(&sender), 100);
+        assert_eq!(client.balance_of(&receiver), i128::MAX);
+    }
+
+    #[test]
     fn transfer_preserves_total_and_rejects_overflow() {
         let env = Env::default();
         env.mock_all_auths();
