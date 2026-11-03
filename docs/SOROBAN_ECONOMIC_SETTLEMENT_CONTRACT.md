@@ -69,3 +69,10 @@ The contract enforces `allocated <= N` while recording and requires exact equali
 5. Persistent storage TTL/renewal and resource budgets require measured tests.
 6. The initial unit tests must pass in the repository's pinned workspace CI before parity can be claimed.
 7. No Testnet deployment, Mainnet readiness, independent audit, official Pi Network endorsement, reserve backing, peg, or redemption promise is implied.
+
+## Repository consistency notes (2026-11-03)
+
+- The canonical implementation described by this document is `contracts/pirc_economic_settlement`.
+- The workspace also currently discovers `contracts/economic_settlement`, a second contract crate with overlapping settlement behavior but a different public method signature and state representation. This duplication is a release-blocking maintainability decision: maintainers must either consolidate it into the canonical crate or document a deliberate compatibility reason before the workspace can be considered interface-stable.
+- The focused test source `contracts/pirc_economic_settlement/src/test.rs` is now explicitly included from `lib.rs` via `#[cfg(test)] mod test;`. Previously the file existed but was not wired into the crate's test module tree. CI must execute the tests before any test-pass claim is made.
+- Added regression coverage for duplicate participant allocation and allocations exceeding the period distributable amount. These tests are authored but not yet confirmed as passing by a completed workflow run.
