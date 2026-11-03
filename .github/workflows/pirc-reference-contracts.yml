@@ -36,4 +36,4 @@ jobs:
       - name: Test reference crates
         run: cargo test -p pirc-207-registry-v3 -p pirc-214-oracle-v2 -p pirc-225-por-v2 -p pirc-237-ai-oracle -p ousd-test-token
       - name: Build Soroban WASM artifacts
-        run: cargo build --release --target wasm32v1-none -p pirc-207-registry-v3 -p pirc-214-oracle-v2 -p pirc-225-por-v2 -p pirc-237-ai-oracle
+        run: cargo build --release --target wasm32v1-none -p pirc-207-registry-v3 -p pirc-214-oracle-v2 -p pirc-225-por-v2 -p pirc-237-ai-oracle -p ousd-test-token
