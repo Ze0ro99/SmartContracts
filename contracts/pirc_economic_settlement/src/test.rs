@@ -194,3 +194,174 @@ fn detects_deduction_sum_overflow() {
         Err(Error::ArithmeticOverflow)
     );
 }
+
+
+#[test]
+fn rejects_duplicate_period_id() {
+    let env = Env::default();
+    let period_id = id(&env, 31);
+    let (_, operator, _) = setup_period(&env, period_id.clone());
+
+    assert_eq!(
+        EconomicSettlement::propose_period(
+            env.clone(),
+            operator,
+            period_id,
+            id(&env, 32),
+            1_000,
+            0,
+            0,
+            0,
+            0,
+            0,
+            1,
+            id(&env, 33),
+        ),
+        Err(Error::PeriodAlreadyExists)
+    );
+}
+
+#[test]
+fn revoked_operator_cannot_record_or_settle() {
+    let env = Env::default();
+    let period_id = id(&env, 34);
+    let (_, operator, _) = setup_period(&env, period_id.clone());
+    EconomicSettlement::approve_period(env.clone(), period_id.clone()).unwrap();
+    EconomicSettlement::set_operator(env.clone(), operator.clone(), false).unwrap();
+
+    assert_eq!(
+        EconomicSettlement::record_allocation(
+            env.clone(),
+            operator.clone(),
+            period_id.clone(),
+            Address::generate(&env),
+            500,
+            id(&env, 35),
+        ),
+        Err(Error::Unauthorized)
+    );
+    assert_eq!(
+        EconomicSettlement::settle_period(env.clone(), operator, period_id, id(&env, 36)),
+        Err(Error::Unauthorized)
+    );
+}
+
+#[test]
+fn zero_distributable_period_can_settle_without_allocations() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let period_id = id(&env, 37);
+    EconomicSettlement::initialize(env.clone(), admin).unwrap();
+    EconomicSettlement::set_operator(env.clone(), operator.clone(), true).unwrap();
+
+    assert_eq!(
+        EconomicSettlement::propose_period(
+            env.clone(),
+            operator.clone(),
+            period_id.clone(),
+            id(&env, 38),
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            1,
+            id(&env, 39),
+        )
+        .unwrap(),
+        0
+    );
+    EconomicSettlement::approve_period(env.clone(), period_id.clone()).unwrap();
+    EconomicSettlement::settle_period(env.clone(), operator, period_id.clone(), id(&env, 40))
+        .unwrap();
+
+    let period = EconomicSettlement::get_period(env, period_id).unwrap();
+    assert_eq!(period.status, PeriodStatus::Settled);
+    assert_eq!(period.allocated, 0);
+    assert_eq!(period.distributable, 0);
+}
+
+#[test]
+fn allocation_sum_overflow_is_rejected_without_state_mutation() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let period_id = id(&env, 41);
+    EconomicSettlement::initialize(env.clone(), admin).unwrap();
+    EconomicSettlement::set_operator(env.clone(), operator.clone(), true).unwrap();
+    EconomicSettlement::propose_period(
+        env.clone(),
+        operator.clone(),
+        period_id.clone(),
+        id(&env, 42),
+        i128::MAX,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        id(&env, 43),
+    )
+    .unwrap();
+    EconomicSettlement::approve_period(env.clone(), period_id.clone()).unwrap();
+
+    EconomicSettlement::record_allocation(
+        env.clone(),
+        operator.clone(),
+        period_id.clone(),
+        Address::generate(&env),
+        i128::MAX - 1,
+        id(&env, 44),
+    )
+    .unwrap();
+    assert_eq!(
+        EconomicSettlement::record_allocation(
+            env.clone(),
+            operator,
+            period_id.clone(),
+            Address::generate(&env),
+            2,
+            id(&env, 45),
+        ),
+        Err(Error::ArithmeticOverflow)
+    );
+    let period = EconomicSettlement::get_period(env, period_id).unwrap();
+    assert_eq!(period.allocated, i128::MAX - 1);
+}
+
+#[test]
+fn settled_period_rejects_late_allocations() {
+    let env = Env::default();
+    let period_id = id(&env, 46);
+    let (_, operator, distributable) = setup_period(&env, period_id.clone());
+    EconomicSettlement::approve_period(env.clone(), period_id.clone());
+    let participant = Address::generate(&env);
+    EconomicSettlement::record_allocation(
+        env.clone(),
+        operator.clone(),
+        period_id.clone(),
+        participant,
+        distributable,
+        id(&env, 47),
+    )
+    .unwrap();
+    EconomicSettlement::settle_period(env.clone(), operator.clone(), period_id.clone(), id(&env, 48))
+        .unwrap();
+
+    assert_eq!(
+        EconomicSettlement::record_allocation(
+            env.clone(),
+            operator,
+            period_id,
+            Address::generate(&env),
+            1,
+            id(&env, 49),
+        ),
+        Err(Error::InvalidState)
+    );
+}
