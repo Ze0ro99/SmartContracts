@@ -53,3 +53,53 @@ These documents specify implementation gates for contract-issued assets and reve
 - [Contract Capability and Evidence Matrix](docs/CONTRACT_CAPABILITY_AND_EVIDENCE_MATRIX.md)
 
 OUSD remains a test-only token reference without a peg, reserve or redemption. Oracle and AI records require independent validation; a proof hash is not a proof verifier. RAW factory and physical evidence scaffolds are not production deployers or possession verification. Production use requires network-specific tests, security review and read-back evidence.
+
+## Cross-system execution contract
+
+The SmartContracts repository is the execution layer of a three-repository architecture:
+- PiRC owns normative specifications, schemas, economic policy and governance.
+- SmartContracts owns Soroban/Rust state transitions, authorization, storage, events and deterministic contract tests.
+- Unity Sphere owns developer workflows, APIs, network adapters, PiDEX UI, RAW evidence orchestration and monitoring.
+
+### Contract lifecycle
+
+`SPECIFIED → TEMPLATE_APPROVED → BUILT → UNIT_TESTED → SECURITY_REVIEWED → TESTNET_DEPLOYED → READBACK_VERIFIED → REGISTERED`
+
+Every state transition requires a commit SHA, artifact/code hash, network identity, transaction/read-back evidence and an authorized reviewer. A contract ID in a document or source file is not proof of deployment.
+
+### RAW factory requirements
+
+A production factory must accept a governance-approved immutable template ID and code hash, asset ID, issuer, metadata commitment, network ID, policy/schema version and idempotency key. It must authorize the deployer, upload/install the approved WASM, use deterministic salt, handle retries safely, register the child contract, and read back the deployed code hash and initialized state. Event-only factories and placeholder transaction IDs remain scaffolds.
+
+Physical evidence must bind asset ID, device identity, certificate/key epoch, nonce, expiry, timestamp, reading and signature. Verify signatures, revocation and replay; preserve inspector/custodian identity and dispute history. A document hash, QR/NFC tag or unsigned sensor reading is not proof of title or possession.
+
+### PiDEX fixed-point settlement
+
+For reserves `x,y`, input `dx`, fee denominator `D`, fee `F`:
+`dx_net = floor(dx * (D-F) / D)`
+`dy = floor(dx_net * y / (x + dx_net))`
+
+Use integer atomic units and checked arithmetic. Validate zero reserves, overflow, token authorization, minimum output, slippage, fee accounting, pause state, reserve conservation, deterministic rounding and dust. CEX order-book VWAP and DEX pool spot price are distinct observations; neither alone proves executable liquidity.
+
+### OUSD reserve and liability boundary
+
+OUSD may be an internal unit of account, a basket-backed utility credit or a legally redeemable USD liability. These are different products. For a redeemable instrument:
+`ReserveCoverage = eligible_reserves_after_haircuts / outstanding_redeemable_liabilities`
+
+Minting requires issuer authority, segregated eligible reserves, custody evidence, reconciliation, independent attestations, redemption terms, liquidity and emergency controls. The current test token is not a peg, reserve proof or redemption implementation. Keep production mint/burn disabled until all gates pass.
+
+### Oracle and cryptographic constraints
+
+A signed observation proves key control, not truth. Require typed units, source identity, freshness, monotonic sequence, replay protection, independent-source quorum, deviation policy and deterministic aggregation. Chainlink feeds are chain-specific; an EVM AggregatorV3 contract is not automatically callable from Soroban. Any relayer/adapter requires explicit trust, signature and read-back design.
+
+Post-quantum readiness requires actual algorithm implementation and target-runtime measurements. Evaluate FIPS 203 ML-KEM, FIPS 204 ML-DSA and FIPS 205 SLH-DSA; a hash or branch label is not PQ protection. Agents can draft and test code but cannot self-approve, sign arbitrary production transactions or bypass protected review.
+
+### Conformance invariants
+
+- Atomic-unit conservation across mint, burn, transfer, swap and settlement.
+- No implicit conversion between internal reference, market quote, collateral mark and redeemable liability.
+- No stale or below-quorum oracle result can authorize settlement.
+- Idempotent requests cannot double-deploy, double-mint or double-settle.
+- All privileged actions are role-checked and auditable.
+- Failures, pauses and rejected transitions emit typed reasons without mutating protected state.
+- Every deployment is verified by transaction, network, code hash and state read-back.
