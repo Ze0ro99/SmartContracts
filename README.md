@@ -41,3 +41,9 @@ Pin Soroban SDK and toolchain versions; enforce explicit authorization; prevent 
 - Soroban settlement crate: `contracts/economic_settlement`
 - [Contract security test matrix](docs/SECURITY_TEST_MATRIX.md)
 - CI: `.github/workflows/economic-contract-validation.yml`
+
+## Economic execution and supply invariants
+- [Economic Mint, Burn, and Settlement Invariants](docs/ECONOMIC_MINT_BURN_AND_SETTLEMENT_INVARIANTS.md)
+- [Economic Execution Flow](docs/ECONOMIC_EXECUTION_FLOW.md)
+
+These documents specify implementation gates for contract-issued assets and revenue-funded settlement. They do not grant control over native Pi or authorize deployment, minting, burning, redemption or treasury operations.
