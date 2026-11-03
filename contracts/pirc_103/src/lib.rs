@@ -88,7 +88,7 @@ mod test {
     use soroban_sdk::{testutils::Address as _, Address, Env};
 
     #[test]
-    fn initialization_cannot_be_taken_over() {
+    fn initialization_is_idempotent() {
         let env = Env::default();
         env.mock_all_auths();
         let id = env.register(Contract, ());
@@ -154,7 +154,7 @@ mod test {
     }
 
     #[test]
-    fn transfer_preserves_total_and_rejects_overflow() {
+    fn transfer_preserves_total() {
         let env = Env::default();
         env.mock_all_auths();
         let id = env.register(Contract, ());
