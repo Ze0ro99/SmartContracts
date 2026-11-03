@@ -97,7 +97,7 @@ impl Oracle {
 
 #[cfg(test)]
 mod test {
-    use super::{Error, Oracle, OracleClient};
+    use super::{Oracle, OracleClient};
     use soroban_sdk::{testutils::Address as _, Address, Env, String};
 
     #[test]
@@ -111,6 +111,7 @@ mod test {
         let feed = String::from_str(&env, "PI/USD");
         let unit = String::from_str(&env, "USD_PER_PI");
         client.initialize(&admin).unwrap();
+        assert!(client.set_reporter(&Address::generate(&env), &reporter, &true).is_err());
         client.set_reporter(&admin, &reporter, &true).unwrap();
         client.update_price(&reporter, &feed, &123_000_000, &1, &unit).unwrap();
         assert_eq!(client.get_latest(&feed).unwrap().price, 123_000_000);
