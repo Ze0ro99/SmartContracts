@@ -1,0 +1,39 @@
+name: PiRC reference contract checks
+
+on:
+  pull_request:
+    paths:
+      - 'contracts/pirc_207_registry_v3/**'
+      - 'contracts/pirc_214_oracle_v2/**'
+      - 'contracts/pirc_225_por_v2/**'
+      - 'contracts/pirc_237_ai_oracle/**'
+      - 'contracts/ousd_test_token/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/pirc-reference-contracts.yml'
+  push:
+    branches:
+      - integration/sovereign-hybrid-ecosystem
+
+permissions:
+  contents: read
+
+jobs:
+  reference-contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32v1-none
+      - name: Format reference crates
+        run: |
+          cargo fmt --manifest-path contracts/pirc_207_registry_v3/Cargo.toml
+          cargo fmt --manifest-path contracts/pirc_214_oracle_v2/Cargo.toml
+          cargo fmt --manifest-path contracts/pirc_225_por_v2/Cargo.toml
+          cargo fmt --manifest-path contracts/pirc_237_ai_oracle/Cargo.toml
+          cargo fmt --manifest-path contracts/ousd_test_token/Cargo.toml
+      - name: Test reference crates
+        run: cargo test -p pirc-207-registry-v3 -p pirc-214-oracle-v2 -p pirc-225-por-v2 -p pirc-237-ai-oracle -p ousd-test-token
+      - name: Build Soroban WASM artifacts
+        run: cargo build --release --target wasm32v1-none -p pirc-207-registry-v3 -p pirc-214-oracle-v2 -p pirc-225-por-v2 -p pirc-237-ai-oracle -p ousd-test-token
