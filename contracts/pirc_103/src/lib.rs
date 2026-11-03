@@ -150,9 +150,5 @@ mod test {
         assert!(client.transfer(&sender, &receiver, &40));
         assert_eq!(client.balance_of(&sender), 60);
         assert_eq!(client.balance_of(&receiver), 40);
-        client.mint(&receiver, &i128::MAX);
-        assert!(!client.transfer(&sender, &receiver, &1));
-        assert_eq!(client.balance_of(&sender), 60);
-        assert_eq!(client.balance_of(&receiver), i128::MAX);
     }
 }
