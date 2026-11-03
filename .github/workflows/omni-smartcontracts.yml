@@ -350,7 +350,8 @@ jobs:
     needs: [discover, build-test-audit]
     if: >
       needs.discover.outputs.has_contracts == 'true' &&
-      (github.event_name != 'workflow_dispatch' || github.event.inputs.deploy_testnet == 'true')
+      github.event_name == 'workflow_dispatch' &&
+      github.event.inputs.deploy_testnet == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
