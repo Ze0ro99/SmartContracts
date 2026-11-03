@@ -103,7 +103,7 @@ impl Registry {
 
 #[cfg(test)]
 mod test {
-    use super::{AssetRecord, Error, Registry, RegistryClient};
+    use super::{AssetRecord, Registry, RegistryClient};
     use soroban_sdk::{testutils::Address as _, Address, BytesN, Env};
 
     #[test]
@@ -117,6 +117,7 @@ mod test {
         let asset = BytesN::from_array(&env, &[7u8; 32]);
         let hash = BytesN::from_array(&env, &[9u8; 32]);
         client.initialize(&admin).unwrap();
+        assert!(client.register_asset(&Address::generate(&env), &asset, &issuer, &hash, &7).is_err());
         client.register_asset(&admin, &asset, &issuer, &hash, &7).unwrap();
         let record: AssetRecord = client.get_asset(&asset).unwrap();
         assert!(record.active);
