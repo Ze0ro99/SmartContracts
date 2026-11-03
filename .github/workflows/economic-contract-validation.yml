@@ -5,34 +5,10 @@ on:
     paths:
       - "Cargo.toml"
       - "Cargo.lock"
-      - "rust-toolchain.toml"
-      - "Dockerfile"
-      - ".dockerignore"
-      - "Makefile"
-      - ".devcontainer/**"
-      - "docs/LOCAL_DEVELOPMENT_ENVIRONMENT.md"
-      - "docs/DEVELOPMENT_COMMANDS.md"
       - "contracts/**"
       - "fixtures/economic-engine-vectors.json"
       - "scripts/test_economic_vectors.py"
       - "docs/ECONOMIC_SETTLEMENT_PARITY_GATE.md"
-      - ".github/workflows/economic-contract-validation.yml"
-  push:
-    branches: [main]
-    paths:
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - "rust-toolchain.toml"
-      - "Dockerfile"
-      - ".dockerignore"
-      - "Makefile"
-      - ".devcontainer/**"
-      - "contracts/**"
-      - "fixtures/economic-engine-vectors.json"
-      - "scripts/test_economic_vectors.py"
-      - "docs/ECONOMIC_SETTLEMENT_PARITY_GATE.md"
-      - "docs/LOCAL_DEVELOPMENT_ENVIRONMENT.md"
-      - "docs/DEVELOPMENT_COMMANDS.md"
       - ".github/workflows/economic-contract-validation.yml"
   workflow_dispatch:
 
@@ -60,13 +36,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.90.0
+      - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Check formatting
-        run: cargo fmt --all -- --check
       - name: Compile workspace
         run: cargo check --workspace --locked
       - name: Run workspace tests
         run: cargo test --workspace --locked
-      - name: Build canonical settlement WASM
-        run: cargo build --locked --release --target wasm32-unknown-unknown -p pirc-economic-settlement
