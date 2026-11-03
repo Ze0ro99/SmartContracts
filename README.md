@@ -31,3 +31,10 @@ These modules are independent reference crates. They require CI compilation, tes
 
 ## Engineering requirements
 Pin Soroban SDK and toolchain versions; enforce explicit authorization; prevent duplicate initialization; use checked arithmetic and documented atomic units; test success, failure, boundary and adversarial paths; emit lifecycle events; and require independent review before production deployment.
+
+## Economic settlement parity gate
+
+- Shared arithmetic vectors: [`fixtures/economic-engine-vectors.json`](fixtures/economic-engine-vectors.json)
+- Contract parity and release gates: [`docs/ECONOMIC_SETTLEMENT_PARITY_GATE.md`](docs/ECONOMIC_SETTLEMENT_PARITY_GATE.md)
+
+These artifacts define expected behavior only. Soroban parity is not established until contract tests consume the fixture and pass in CI.
