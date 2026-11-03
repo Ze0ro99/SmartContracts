@@ -76,3 +76,15 @@ The contract enforces `allocated <= N` while recording and requires exact equali
 - The workspace also currently discovers `contracts/economic_settlement`, a second contract crate with overlapping settlement behavior but a different public method signature and state representation. This duplication is a release-blocking maintainability decision: maintainers must either consolidate it into the canonical crate or document a deliberate compatibility reason before the workspace can be considered interface-stable.
 - The focused test source `contracts/pirc_economic_settlement/src/test.rs` is now explicitly included from `lib.rs` via `#[cfg(test)] mod test;`. Previously the file existed but was not wired into the crate's test module tree. CI must execute the tests before any test-pass claim is made.
 - Added regression coverage for duplicate participant allocation and allocations exceeding the period distributable amount. These tests are authored but not yet confirmed as passing by a completed workflow run.
+
+## Post-merge hardening (2026-11-03)
+
+The follow-up branch applies these corrections to the canonical crate:
+
+- Rejects zero-value allocations; every recorded participant allocation must be strictly positive.
+- Rejects policy version zero so every period is tied to an explicit non-zero policy version.
+- Adds regression tests for zero allocation, duplicate participant allocation, allocation above the remaining budget, underfunded periods, exact conservation and repeated settlement.
+- Corrects the test module layout: the file included by `#[cfg(test)] mod test;` now contains the test module contents directly rather than declaring a second nested `mod test`.
+- Excludes the legacy `contracts/economic_settlement` package from Cargo workspace membership while preserving its source files for compatibility/reference. The canonical workspace package is `pirc-economic-settlement`; the legacy crate is not deleted.
+
+These changes are proposed in a follow-up PR and remain subject to the pinned Rust/Soroban CI run. Exclusion from the workspace does not constitute a security review or a guarantee that the legacy source can never be built independently.

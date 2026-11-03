@@ -19,6 +19,8 @@ pub enum Error {
     AllocationNotConserved = 10,
     AlreadySettled = 11,
     ArithmeticOverflow = 12,
+    InvalidAllocationAmount = 13,
+    InvalidPolicyVersion = 14,
 }
 
 #[contracttype]
@@ -111,6 +113,9 @@ impl EconomicSettlement {
         if env.storage().persistent().has(&DataKey::Period(period_id.clone())) {
             return Err(Error::PeriodAlreadyExists);
         }
+        if policy_version == 0 {
+            return Err(Error::InvalidPolicyVersion);
+        }
 
         let values = [
             collected_revenue,
@@ -195,8 +200,8 @@ impl EconomicSettlement {
         evidence_hash: BytesN<32>,
     ) -> Result<i128, Error> {
         Self::require_operator(&env, &operator)?;
-        if amount < 0 {
-            return Err(Error::AllocationExceedsDistributable);
+        if amount <= 0 {
+            return Err(Error::InvalidAllocationAmount);
         }
 
         let period_key = DataKey::Period(period_id.clone());
