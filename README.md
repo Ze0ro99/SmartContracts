@@ -25,6 +25,7 @@ These reference modules require compilation, test execution, security review and
 - PiRC-214 Oracle V2 reference crate: `contracts/pirc_214_oracle_v2`
 - PiRC-225 Proof-of-Reserves V2 reference crate: `contracts/pirc_225_por_v2`
 - PiRC-237 AI Oracle reference crate: `contracts/pirc_237_ai_oracle`
+- OUSD test-only token reference crate: `contracts/ousd_test_token`
 
 These modules are independent reference crates. They require CI compilation, test review and security review; the AI proof hash is a commitment only, not ZK verification.
 
