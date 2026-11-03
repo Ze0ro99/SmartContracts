@@ -55,7 +55,7 @@ impl OusdTestToken {
     fn require_admin(env: &Env, admin: &Address) -> Result<(), Error> {
         admin.require_auth();
         let stored = Self::require_initialized(env)?;
-        if stored != *admin {
+        if stored != admin.clone() {
             return Err(Error::Unauthorized);
         }
         Ok(())
@@ -74,7 +74,7 @@ impl OusdTestToken {
             .set(&DataKey::Balance(owner.clone()), &amount);
     }
 
-    fn total_supply(env: &Env) -> i128 {
+    fn read_total_supply(env: &Env) -> i128 {
         env.storage()
             .instance()
             .get(&DataKey::TotalSupply)
@@ -127,7 +127,7 @@ impl OusdTestToken {
         if amount <= 0 {
             return Err(Error::InvalidAmount);
         }
-        let supply = Self::total_supply(&env);
+        let supply = Self::read_total_supply(&env);
         let next_supply = supply.checked_add(amount).ok_or(Error::ArithmeticError)?;
         if next_supply > MAX_SUPPLY {
             return Err(Error::SupplyCapExceeded);
@@ -287,8 +287,8 @@ impl OusdTestToken {
 
 #[cfg(test)]
 mod test {
-    use super::{Error, OusdTestToken, OusdTestTokenClient, MAX_SUPPLY};
-    use soroban_sdk::{testutils::Address as _, Address, Env, String};
+    use super::{OusdTestToken, OusdTestTokenClient, MAX_SUPPLY};
+    use soroban_sdk::{testutils::{Address as _, Ledger}, Address, Env, String};
 
     fn setup() -> (Env, Address, Address, Address, Address) {
         let env = Env::default();
