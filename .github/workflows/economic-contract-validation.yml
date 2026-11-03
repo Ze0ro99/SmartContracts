@@ -17,6 +17,23 @@ on:
       - "scripts/test_economic_vectors.py"
       - "docs/ECONOMIC_SETTLEMENT_PARITY_GATE.md"
       - ".github/workflows/economic-contract-validation.yml"
+  push:
+    branches: [main]
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - "Dockerfile"
+      - ".dockerignore"
+      - "Makefile"
+      - ".devcontainer/**"
+      - "contracts/**"
+      - "fixtures/economic-engine-vectors.json"
+      - "scripts/test_economic_vectors.py"
+      - "docs/ECONOMIC_SETTLEMENT_PARITY_GATE.md"
+      - "docs/LOCAL_DEVELOPMENT_ENVIRONMENT.md"
+      - "docs/DEVELOPMENT_COMMANDS.md"
+      - ".github/workflows/economic-contract-validation.yml"
   workflow_dispatch:
 
 permissions:
