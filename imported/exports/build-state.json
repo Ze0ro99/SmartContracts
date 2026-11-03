@@ -1,5 +1,6 @@
 {
   "processed": [
+    "economic_settlement",
     "ousd_test_token",
     "pirc_1",
     "pirc_10",
@@ -109,7 +110,8 @@
     "pirc_8",
     "pirc_9",
     "pirc_99",
+    "pirc_economic_settlement",
     "subscription"
   ],
-  "last_run": "2026-11-03T15:49:38Z"
+  "last_run": "2026-11-03T21:56:17Z"
 }
