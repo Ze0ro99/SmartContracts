@@ -39,7 +39,7 @@ impl ProofOfReserves {
         admin.require_auth();
         let stored: Option<Address> = env.storage().instance().get(&DataKey::Admin);
         match stored {
-            Some(value) if value == *admin => Ok(()),
+            Some(value) if value == admin.clone() => Ok(()),
             Some(_) => Err(Error::Unauthorized),
             None => Err(Error::NotInitialized),
         }
