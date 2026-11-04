@@ -301,8 +301,8 @@ jobs:
           command -v stellar >/dev/null && CLI="stellar"
           command -v soroban >/dev/null && CLI="${CLI:-soroban}"
           if [ -z "$CLI" ]; then
-            echo "No CLI – skip testnet"
-            exit 0
+            echo "::error::Stellar CLI is unavailable; explicit Testnet deployment cannot proceed."
+            exit 1
           fi
 
           $CLI keys generate ci-deployer --network testnet --fund 2>/dev/null || \
@@ -317,8 +317,8 @@ jobs:
             WASM=$(find "contracts/${{ matrix.contract }}" -name "*.wasm" 2>/dev/null | head -n 1)
           fi
           if [ -z "$WASM" ]; then
-            echo "No WASM found"
-            exit 0
+            echo "::error::No WASM artifact found; explicit Testnet deployment cannot proceed."
+            exit 1
           fi
 
           echo "Deploying $WASM ..."
@@ -420,7 +420,7 @@ jobs:
         run: |
           set +e
           cat > SUMMARY.md <<EOF
-          # Auto Fix + Testnet Pipeline Summary
+          # Manual Auto-Fix + Stellar Testnet Pipeline Summary
           **Date:** $(date -u)
 
           ## Free professional stack
