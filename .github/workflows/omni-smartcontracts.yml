@@ -31,7 +31,7 @@ on:
         description: 'Deploy and verify contracts on Stellar Testnet'
         required: false
         type: boolean
-        default: true
+        default: false
 
 permissions:
   contents: read
@@ -114,6 +114,7 @@ jobs:
         id: set-matrix
         env:
           TARGET_CONTRACT: ${{ github.event.inputs.target_contract }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
         run: |
           set -euo pipefail
           VALID=()
@@ -128,14 +129,37 @@ jobs:
             fi
           done
 
+          # Pull requests and pushes validate only contracts touched by that change.
+          # Scheduled and manually dispatched full audits may still scan every valid contract.
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ] || [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            if [ -n "$BASE_SHA" ] && [ "$BASE_SHA" != "0000000000000000000000000000000000000000" ]; then
+              git fetch --no-tags origin "$BASE_SHA" --depth=1
+              mapfile -t CHANGED_CONTRACTS < <(
+                git diff --name-only "$BASE_SHA...HEAD" |
+                  awk -F/ '$1 == "contracts" && NF >= 2 { print $2 }' |
+                  sort -u
+              )
+              VALID=()
+              for name in "${CHANGED_CONTRACTS[@]}"; do
+                if [ -f "contracts/$name/Cargo.toml" ] &&
+                   python3 -c "import tomllib,sys; tomllib.load(open(sys.argv[1],'rb'))" "contracts/$name/Cargo.toml" 2>/dev/null; then
+                  VALID+=("$name")
+                fi
+              done
+            else
+              VALID=()
+            fi
+          fi
+
           if [ -n "$TARGET_CONTRACT" ]; then
+            [ -f "contracts/$TARGET_CONTRACT/Cargo.toml" ] || { echo "Unknown target contract: $TARGET_CONTRACT"; exit 1; }
             MATRIX=$(jq -nc --arg c "$TARGET_CONTRACT" '{include:[{contract:$c}]}')
           elif [ ${#VALID[@]} -eq 0 ]; then
             echo "has_contracts=false" >> "$GITHUB_OUTPUT"
-            echo "matrix={\"include\":[]}" >> "$GITHUB_OUTPUT"
+            echo "matrix={\\"include\\":[]}" >> "$GITHUB_OUTPUT"
             exit 0
           else
-            MATRIX=$(printf '%s\n' "${VALID[@]}" | jq -Rnc '{include: [inputs | {contract: .}]}')
+            MATRIX=$(printf '%s\\n' "${VALID[@]}" | jq -Rnc '{include: [inputs | {contract: .}]}')
           fi
 
           echo "has_contracts=true" >> "$GITHUB_OUTPUT"
