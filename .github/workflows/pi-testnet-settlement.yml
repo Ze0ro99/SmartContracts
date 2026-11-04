@@ -130,6 +130,24 @@ jobs:
       - name: Exercise settlement lifecycle and rejection guards
         run: |
           set -euo pipefail
+          expect_contract_error() {
+            local expected_code="$1"
+            local label="$2"
+            shift 2
+            local output_file="/tmp/pi-testnet-contract-error.log"
+            if "$@" >"$output_file" 2>&1; then
+              cat "$output_file"
+              echo "::error::$label unexpectedly succeeded."
+              exit 1
+            fi
+            if ! grep -Eq "Contract, #${expected_code}([^0-9]|$)" "$output_file"; then
+              cat "$output_file"
+              echo "::error::$label failed for a reason other than expected contract error #${expected_code}."
+              exit 1
+            fi
+            echo "$label rejected with expected contract error #${expected_code}."
+          }
+
           PERIOD_ID=$(printf 'pirc-settlement-%s' "$GITHUB_RUN_ID" | sha256sum | cut -d' ' -f1)
           ASSET_ID=$(printf 'pi-testnet-demo-asset' | sha256sum | cut -d' ' -f1)
           INPUT_DIGEST=$(printf 'pirc-test-input-%s' "$GITHUB_RUN_ID" | sha256sum | cut -d' ' -f1)
@@ -160,43 +178,27 @@ jobs:
             --operator "$PI_TESTNET_DEPLOYER" --period_id "$PERIOD_ID" \
             --participant "$PARTICIPANT" --amount 850 --evidence_hash "$EVIDENCE_HASH"
 
-          if stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source-account pi-deployer --network pi-testnet -- record_allocation \
+          expect_contract_error 8 "Duplicate allocation" \
+            stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source-account pi-deployer --network pi-testnet --send=no -- record_allocation \
             --operator "$PI_TESTNET_DEPLOYER" --period_id "$PERIOD_ID" \
-            --participant "$PARTICIPANT" --amount 1 --evidence_hash "$EVIDENCE_HASH"; then
-            echo "::error::Duplicate allocation was unexpectedly accepted."
-            exit 1
-          else
-            echo "Duplicate allocation rejected as expected."
-          fi
+            --participant "$PARTICIPANT" --amount 1 --evidence_hash "$EVIDENCE_HASH"
 
-          if stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source-account pi-deployer --network pi-testnet -- record_allocation \
+          expect_contract_error 9 "Over-allocation" \
+            stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source-account pi-deployer --network pi-testnet --send=no -- record_allocation \
             --operator "$PI_TESTNET_DEPLOYER" --period_id "$PERIOD_ID" \
-            --participant "$OVERFLOW_PARTICIPANT" --amount 1 --evidence_hash "$EVIDENCE_HASH"; then
-            echo "::error::Allocation above distributable amount was unexpectedly accepted."
-            exit 1
-          else
-            echo "Over-allocation rejected as expected."
-          fi
+            --participant "$OVERFLOW_PARTICIPANT" --amount 1 --evidence_hash "$EVIDENCE_HASH"
 
           stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source-account pi-deployer --network pi-testnet --send=yes -- settle_period \
             --operator "$PI_TESTNET_DEPLOYER" --period_id "$PERIOD_ID" --settlement_digest "$SETTLEMENT_DIGEST"
 
-          if stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source-account pi-deployer --network pi-testnet -- settle_period \
-            --operator "$PI_TESTNET_DEPLOYER" --period_id "$PERIOD_ID" --settlement_digest "$SETTLEMENT_DIGEST"; then
-            echo "::error::Second settlement was unexpectedly accepted."
-            exit 1
-          else
-            echo "Second settlement rejected as expected."
-          fi
+          expect_contract_error 11 "Double settlement" \
+            stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source-account pi-deployer --network pi-testnet --send=no -- settle_period \
+            --operator "$PI_TESTNET_DEPLOYER" --period_id "$PERIOD_ID" --settlement_digest "$SETTLEMENT_DIGEST"
 
-          if stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source-account pi-deployer --network pi-testnet -- record_allocation \
+          expect_contract_error 7 "Post-settlement mutation" \
+            stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source-account pi-deployer --network pi-testnet --send=no -- record_allocation \
             --operator "$PI_TESTNET_DEPLOYER" --period_id "$PERIOD_ID" \
-            --participant "$OVERFLOW_PARTICIPANT" --amount 1 --evidence_hash "$EVIDENCE_HASH"; then
-            echo "::error::State mutation after settlement was unexpectedly accepted."
-            exit 1
-          else
-            echo "Post-settlement mutation rejected as expected."
-          fi
+            --participant "$OVERFLOW_PARTICIPANT" --amount 1 --evidence_hash "$EVIDENCE_HASH"
 
           stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source-account pi-deployer --network pi-testnet -- get_period --period_id "$PERIOD_ID" | tee pi-testnet-period-readback.txt
           stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source-account pi-deployer --network pi-testnet -- get_allocation --period_id "$PERIOD_ID" --participant "$PARTICIPANT" | tee pi-testnet-allocation-readback.txt
@@ -204,16 +206,12 @@ jobs:
           stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source-account pi-deployer --network pi-testnet --send=yes -- set_operator --operator "$PI_TESTNET_DEPLOYER" --enabled false
 
           NEXT_PERIOD=$(printf 'pirc-revoked-operator-%s' "$GITHUB_RUN_ID" | sha256sum | cut -d' ' -f1)
-          if stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source-account pi-deployer --network pi-testnet -- propose_period \
+          expect_contract_error 3 "Revoked operator" \
+            stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source-account pi-deployer --network pi-testnet --send=no -- propose_period \
             --operator "$PI_TESTNET_DEPLOYER" --period_id "$NEXT_PERIOD" --asset_id "$ASSET_ID" \
             --collected_revenue 1000 --operating_costs 100 --tax_and_statutory 50 \
             --refunds_and_due_liabilities 0 --reserve_replenishment 0 --approved_commitments 0 \
-            --policy_version 1 --input_digest "$INPUT_DIGEST"; then
-            echo "::error::Revoked operator was unexpectedly accepted."
-            exit 1
-          else
-            echo "Revoked operator rejected as expected."
-          fi
+            --policy_version 1 --input_digest "$INPUT_DIGEST"
 
           {
             echo "- Period ID: $PERIOD_ID"
