@@ -147,7 +147,12 @@ jobs:
                 fi
               done
             else
-              VALID=()
+              # Script/workflow-only changes still smoke-test the canonical settlement contract.
+              if [ -f "contracts/pirc_economic_settlement/Cargo.toml" ]; then
+                VALID=("pirc_economic_settlement")
+              else
+                VALID=()
+              fi
             fi
           fi
 
