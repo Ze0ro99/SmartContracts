@@ -12,7 +12,7 @@ The workflow is manual-only. It does not deploy to Pi Mainnet, transfer real Pi,
 2. Add an Environment secret named PI_TESTNET_DEPLOYER_SECRET containing a dedicated Pi Testnet deployer secret. Never use a Mainnet wallet secret.
 3. Fund that test identity with Test Pi through the Pi Testnet wallet/faucet. Test Pi has no monetary value.
 4. Prefer enabling required reviewers for the pi-testnet Environment.
-5. Confirm the configured network passphrase and RPC endpoint against the current Pi developer documentation before deployment.
+5. Confirm the Horizon root reports the Pi Testnet network passphrase and the RPC health/latest-ledger probes succeed before deployment.
 
 ## Run
 
