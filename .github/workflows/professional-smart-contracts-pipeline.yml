@@ -1,24 +1,12 @@
 name: Professional Smart Contracts CI/CD, Audit & Reporting Pipeline
 
 on:
-  push:
-    branches: [main, master, develop]
-    paths:
-      - 'contracts/**'
-      - 'scripts/**'
-      - '.github/workflows/**'
-      - 'Cargo.toml'
-  pull_request:
-    branches: [main, master]
-  schedule:
-    - cron: '0 3 * * *'   # Daily at 03:00 UTC
   workflow_dispatch:
     inputs:
       target_contract:
-        description: 'Specific contract folder (leave empty for all valid contracts)'
+        description: "Specific contract folder (empty = full legacy audit)"
         required: false
-        default: ''
-
+        default: ""
 env:
   RUST_VERSION: '1.88'
   SOROBAN_VERSION: '23.0.0'
