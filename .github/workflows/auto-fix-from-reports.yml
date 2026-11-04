@@ -1,15 +1,6 @@
 name: Auto Fix Reports + Testnet Professional Pipeline
 
 on:
-  workflow_run:
-    workflows:
-      - "Auto Smart Contracts Controller"
-      - "Professional Smart Contracts CI/CD, Audit & Reporting Pipeline"
-      - "OMNI SmartContracts Pipeline"
-      - "Auto Fix From Reports & Errors"
-    types: [completed]
-  schedule:
-    - cron: '45 * * * *'
   workflow_dispatch:
     inputs:
       max_contracts:
@@ -18,12 +9,11 @@ on:
       enable_testnet_deploy:
         description: 'Deploy successful builds to Stellar Testnet (Friendbot)'
         type: boolean
-        default: true
+        default: false
       push_fixes:
         description: 'Commit repaired files to auto-fix branch'
         type: boolean
-        default: true
-
+        default: false
 permissions:
   contents: write
   actions: read
@@ -293,7 +283,7 @@ jobs:
           cargo test --manifest-path "contracts/${{ matrix.contract }}/Cargo.toml" -- --nocapture || true
 
       - name: Install stellar-cli
-        if: steps.build.outputs.code == '0' && github.event.inputs.enable_testnet_deploy != 'false'
+        if: steps.build.outputs.code == '0' && github.event.inputs.enable_testnet_deploy == 'true'
         continue-on-error: true
         run: |
           set +e
@@ -303,7 +293,7 @@ jobs:
           stellar version 2>/dev/null || soroban version 2>/dev/null || echo "CLI not available"
 
       - name: Testnet deploy (Stellar Testnet + Friendbot)
-        if: steps.build.outputs.code == '0' && github.event.inputs.enable_testnet_deploy != 'false'
+        if: steps.build.outputs.code == '0' && github.event.inputs.enable_testnet_deploy == 'true'
         continue-on-error: true
         run: |
           set +e
@@ -354,7 +344,7 @@ jobs:
             echo "- Build: ${ST}"
             echo "- Build exit code: ${CODE}"
             echo "- Date: $(date -u)"
-            echo "- Network target: Stellar Testnet (Soroban) – Pi-compatible stack"
+            echo "- Network target: Stellar Testnet (Soroban reference only)"
             echo "- RPC: ${{ env.STELLAR_RPC }}"
             echo "- SDK: ${{ env.SOROBAN_SDK }}"
             echo "- Tools: rustc, cargo, stellar-cli, Friendbot"
@@ -409,7 +399,7 @@ jobs:
           path: all-results/
 
       - name: Commit repairs if any
-        if: ${{ github.event.inputs.push_fixes != 'false' }}
+        if: ${{ github.event.inputs.push_fixes == 'true' }}
         continue-on-error: true
         run: |
           set +e
@@ -424,7 +414,7 @@ jobs:
 
           git checkout -B ${{ env.FIX_BRANCH }}
           git commit -m "fix(auto): repair contracts from reports + testnet pipeline [skip ci]"
-          git push origin ${{ env.FIX_BRANCH }} --force || echo "Push failed (non-blocking)"
+          git push origin ${{ env.FIX_BRANCH }} || echo "Push failed (non-blocking); existing branch history was preserved"
 
       - name: Master summary
         run: |
@@ -439,10 +429,10 @@ jobs:
           - Stellar Testnet RPC + Friendbot
           - cargo test (soroban testutils)
 
-          ## Pi alignment
-          - Same Soroban stack used by Pi smart contracts
-          - Compatible with PiRC patterns
-          - Testnet validation before production
+          ## Network separation
+          - This workflow targets Stellar Testnet only when explicitly enabled.
+          - Pi Testnet is handled by the separate gated Pi Testnet settlement workflow.
+          - Pi Mainnet is never targeted by this workflow.
 
           ## Branch
           - ${{ env.FIX_BRANCH }}
