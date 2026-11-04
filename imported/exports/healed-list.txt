@@ -1,3 +1,4 @@
+contracts/economic_settlement/Cargo.toml
 contracts/ousd_test_token/Cargo.toml
 contracts/pirc_1/Cargo.toml
 contracts/pirc_10/Cargo.toml
@@ -107,4 +108,5 @@ contracts/pirc_7/Cargo.toml
 contracts/pirc_8/Cargo.toml
 contracts/pirc_9/Cargo.toml
 contracts/pirc_99/Cargo.toml
+contracts/pirc_economic_settlement/Cargo.toml
 contracts/subscription/Cargo.toml
