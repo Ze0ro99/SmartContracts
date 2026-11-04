@@ -107,7 +107,7 @@ jobs:
           set -euo pipefail
           WASM="wasm/pirc_economic_settlement.wasm"
           test -s "$WASM"
-          CID=$(stellar contract deploy --wasm "$WASM" --source pi-deployer --network pi-testnet | tail -n 1)
+          CID=$(stellar contract deploy --wasm "$WASM" --source-account pi-deployer --network pi-testnet | tail -n 1)
           if [[ ! "$CID" =~ ^C[A-Z2-7]{55}$ ]]; then
             echo "::error::Deployment did not return a valid Soroban contract ID."
             exit 1
@@ -124,8 +124,8 @@ jobs:
       - name: Initialize contract and enable test operator
         run: |
           set -euo pipefail
-          stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source pi-deployer --network pi-testnet -- initialize --admin "$PI_TESTNET_DEPLOYER"
-          stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source pi-deployer --network pi-testnet -- set_operator --operator "$PI_TESTNET_DEPLOYER" --enabled true
+          stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source-account pi-deployer --network pi-testnet --send=yes -- initialize --admin "$PI_TESTNET_DEPLOYER"
+          stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source-account pi-deployer --network pi-testnet --send=yes -- set_operator --operator "$PI_TESTNET_DEPLOYER" --enabled true
 
       - name: Exercise settlement lifecycle and rejection guards
         run: |
@@ -141,74 +141,74 @@ jobs:
           PARTICIPANT=$(stellar keys address pi-test-participant)
           OVERFLOW_PARTICIPANT=$(stellar keys address pi-test-overflow-participant)
 
-          stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source pi-deployer --network pi-testnet -- propose_period \
+          stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source-account pi-deployer --network pi-testnet --send=yes -- propose_period \
             --operator "$PI_TESTNET_DEPLOYER" \
-            --period-id "$PERIOD_ID" \
-            --asset-id "$ASSET_ID" \
-            --collected-revenue 1000 \
-            --operating-costs 100 \
-            --tax-and-statutory 50 \
-            --refunds-and-due-liabilities 0 \
-            --reserve-replenishment 0 \
-            --approved-commitments 0 \
-            --policy-version 1 \
-            --input-digest "$INPUT_DIGEST"
+            --period_id "$PERIOD_ID" \
+            --asset_id "$ASSET_ID" \
+            --collected_revenue 1000 \
+            --operating_costs 100 \
+            --tax_and_statutory 50 \
+            --refunds_and_due_liabilities 0 \
+            --reserve_replenishment 0 \
+            --approved_commitments 0 \
+            --policy_version 1 \
+            --input_digest "$INPUT_DIGEST"
 
-          stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source pi-deployer --network pi-testnet -- approve_period --period-id "$PERIOD_ID"
+          stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source-account pi-deployer --network pi-testnet --send=yes -- approve_period --period_id "$PERIOD_ID"
 
-          stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source pi-deployer --network pi-testnet -- record_allocation \
-            --operator "$PI_TESTNET_DEPLOYER" --period-id "$PERIOD_ID" \
-            --participant "$PARTICIPANT" --amount 850 --evidence-hash "$EVIDENCE_HASH"
+          stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source-account pi-deployer --network pi-testnet --send=yes -- record_allocation \
+            --operator "$PI_TESTNET_DEPLOYER" --period_id "$PERIOD_ID" \
+            --participant "$PARTICIPANT" --amount 850 --evidence_hash "$EVIDENCE_HASH"
 
-          if stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source pi-deployer --network pi-testnet -- record_allocation \
-            --operator "$PI_TESTNET_DEPLOYER" --period-id "$PERIOD_ID" \
-            --participant "$PARTICIPANT" --amount 1 --evidence-hash "$EVIDENCE_HASH"; then
+          if stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source-account pi-deployer --network pi-testnet -- record_allocation \
+            --operator "$PI_TESTNET_DEPLOYER" --period_id "$PERIOD_ID" \
+            --participant "$PARTICIPANT" --amount 1 --evidence_hash "$EVIDENCE_HASH"; then
             echo "::error::Duplicate allocation was unexpectedly accepted."
             exit 1
           else
             echo "Duplicate allocation rejected as expected."
           fi
 
-          if stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source pi-deployer --network pi-testnet -- record_allocation \
-            --operator "$PI_TESTNET_DEPLOYER" --period-id "$PERIOD_ID" \
-            --participant "$OVERFLOW_PARTICIPANT" --amount 1 --evidence-hash "$EVIDENCE_HASH"; then
+          if stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source-account pi-deployer --network pi-testnet -- record_allocation \
+            --operator "$PI_TESTNET_DEPLOYER" --period_id "$PERIOD_ID" \
+            --participant "$OVERFLOW_PARTICIPANT" --amount 1 --evidence_hash "$EVIDENCE_HASH"; then
             echo "::error::Allocation above distributable amount was unexpectedly accepted."
             exit 1
           else
             echo "Over-allocation rejected as expected."
           fi
 
-          stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source pi-deployer --network pi-testnet -- settle_period \
-            --operator "$PI_TESTNET_DEPLOYER" --period-id "$PERIOD_ID" --settlement-digest "$SETTLEMENT_DIGEST"
+          stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source-account pi-deployer --network pi-testnet --send=yes -- settle_period \
+            --operator "$PI_TESTNET_DEPLOYER" --period_id "$PERIOD_ID" --settlement_digest "$SETTLEMENT_DIGEST"
 
-          if stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source pi-deployer --network pi-testnet -- settle_period \
-            --operator "$PI_TESTNET_DEPLOYER" --period-id "$PERIOD_ID" --settlement-digest "$SETTLEMENT_DIGEST"; then
+          if stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source-account pi-deployer --network pi-testnet -- settle_period \
+            --operator "$PI_TESTNET_DEPLOYER" --period_id "$PERIOD_ID" --settlement_digest "$SETTLEMENT_DIGEST"; then
             echo "::error::Second settlement was unexpectedly accepted."
             exit 1
           else
             echo "Second settlement rejected as expected."
           fi
 
-          if stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source pi-deployer --network pi-testnet -- record_allocation \
-            --operator "$PI_TESTNET_DEPLOYER" --period-id "$PERIOD_ID" \
-            --participant "$OVERFLOW_PARTICIPANT" --amount 1 --evidence-hash "$EVIDENCE_HASH"; then
+          if stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source-account pi-deployer --network pi-testnet -- record_allocation \
+            --operator "$PI_TESTNET_DEPLOYER" --period_id "$PERIOD_ID" \
+            --participant "$OVERFLOW_PARTICIPANT" --amount 1 --evidence_hash "$EVIDENCE_HASH"; then
             echo "::error::State mutation after settlement was unexpectedly accepted."
             exit 1
           else
             echo "Post-settlement mutation rejected as expected."
           fi
 
-          stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source pi-deployer --network pi-testnet -- get_period --period-id "$PERIOD_ID" | tee pi-testnet-period-readback.txt
-          stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source pi-deployer --network pi-testnet -- get_allocation --period-id "$PERIOD_ID" --participant "$PARTICIPANT" | tee pi-testnet-allocation-readback.txt
+          stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source-account pi-deployer --network pi-testnet -- get_period --period_id "$PERIOD_ID" | tee pi-testnet-period-readback.txt
+          stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source-account pi-deployer --network pi-testnet -- get_allocation --period_id "$PERIOD_ID" --participant "$PARTICIPANT" | tee pi-testnet-allocation-readback.txt
 
-          stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source pi-deployer --network pi-testnet -- set_operator --operator "$PI_TESTNET_DEPLOYER" --enabled false
+          stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source-account pi-deployer --network pi-testnet --send=yes -- set_operator --operator "$PI_TESTNET_DEPLOYER" --enabled false
 
           NEXT_PERIOD=$(printf 'pirc-revoked-operator-%s' "$GITHUB_RUN_ID" | sha256sum | cut -d' ' -f1)
-          if stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source pi-deployer --network pi-testnet -- propose_period \
-            --operator "$PI_TESTNET_DEPLOYER" --period-id "$NEXT_PERIOD" --asset-id "$ASSET_ID" \
-            --collected-revenue 1000 --operating-costs 100 --tax-and-statutory 50 \
-            --refunds-and-due-liabilities 0 --reserve-replenishment 0 --approved-commitments 0 \
-            --policy-version 1 --input-digest "$INPUT_DIGEST"; then
+          if stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source-account pi-deployer --network pi-testnet -- propose_period \
+            --operator "$PI_TESTNET_DEPLOYER" --period_id "$NEXT_PERIOD" --asset_id "$ASSET_ID" \
+            --collected_revenue 1000 --operating_costs 100 --tax_and_statutory 50 \
+            --refunds_and_due_liabilities 0 --reserve_replenishment 0 --approved_commitments 0 \
+            --policy_version 1 --input_digest "$INPUT_DIGEST"; then
             echo "::error::Revoked operator was unexpectedly accepted."
             exit 1
           else
