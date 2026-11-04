@@ -13,7 +13,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: pi-testnet-settlement-\${{ github.ref }}
+  group: pi-testnet-settlement-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -66,7 +66,7 @@ jobs:
 
       - name: Require Pi Testnet deployer secret
         env:
-          PI_TESTNET_DEPLOYER_SECRET: \${{ secrets.PI_TESTNET_DEPLOYER_SECRET }}
+          PI_TESTNET_DEPLOYER_SECRET: ${{ secrets.PI_TESTNET_DEPLOYER_SECRET }}
         run: |
           set -euo pipefail
           if [ -z "$PI_TESTNET_DEPLOYER_SECRET" ]; then
@@ -76,7 +76,7 @@ jobs:
 
       - name: Configure Pi Testnet and import test identity
         env:
-          PI_TESTNET_DEPLOYER_SECRET: \${{ secrets.PI_TESTNET_DEPLOYER_SECRET }}
+          PI_TESTNET_DEPLOYER_SECRET: ${{ secrets.PI_TESTNET_DEPLOYER_SECRET }}
         run: |
           set -euo pipefail
           stellar network add pi-testnet \
@@ -87,6 +87,13 @@ jobs:
           DEPLOYER=$(stellar keys address pi-deployer)
           echo "PI_TESTNET_DEPLOYER=$DEPLOYER" >> "$GITHUB_ENV"
           echo "Configured Pi Testnet identity: $DEPLOYER"
+
+      - name: Verify Pi Testnet Horizon network identity
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 3 --retry-delay 2 \\
+            https://api.testnet.minepi.com/ |
+            python -c 'import json,sys; d=json.load(sys.stdin); actual=d.get("network_passphrase"); assert actual == "Pi Testnet", f"Unexpected Pi Testnet passphrase: {actual!r}"; print("Verified Horizon network passphrase:", actual)'
 
       - name: Verify Pi Testnet RPC before deployment
         run: |
@@ -225,7 +232,7 @@ jobs:
 
       - name: Verify deployed contract instance read-back
         env:
-          PI_TESTNET_CONTRACT_ID: \${{ env.PI_TESTNET_CONTRACT_ID }}
+          PI_TESTNET_CONTRACT_ID: ${{ env.PI_TESTNET_CONTRACT_ID }}
         run: |
           set -euo pipefail
           python -m pip install "stellar-sdk>=14,<16"
