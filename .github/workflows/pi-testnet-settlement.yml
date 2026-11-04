@@ -91,7 +91,7 @@ jobs:
       - name: Verify Pi Testnet Horizon network identity
         run: |
           set -euo pipefail
-          curl --fail --silent --show-error --retry 3 --retry-delay 2 \\
+          curl --fail --silent --show-error --retry 3 --retry-delay 2 \
             https://api.testnet.minepi.com/ |
             python -c 'import json,sys; d=json.load(sys.stdin); actual=d.get("network_passphrase"); assert actual == "Pi Testnet", f"Unexpected Pi Testnet passphrase: {actual!r}"; print("Verified Horizon network passphrase:", actual)'
 
