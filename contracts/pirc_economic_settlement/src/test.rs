@@ -5,6 +5,28 @@ fn id(env: &Env, byte: u8) -> BytesN<32> {
     BytesN::from_array(env, &[byte; 32])
 }
 
+fn proposal(
+    env: &Env,
+    period_id: BytesN<32>,
+    asset_id: BytesN<32>,
+    amounts: [i128; 6],
+    policy_version: u32,
+    input_digest: BytesN<32>,
+) -> PeriodProposal {
+    PeriodProposal {
+        period_id,
+        asset_id,
+        collected_revenue: amounts[0],
+        operating_costs: amounts[1],
+        tax_and_statutory: amounts[2],
+        refunds_and_due_liabilities: amounts[3],
+        reserve_replenishment: amounts[4],
+        approved_commitments: amounts[5],
+        policy_version,
+        input_digest,
+    }
+}
+
 fn setup_period(env: &Env, period_id: BytesN<32>) -> (Address, Address, i128) {
     env.mock_all_auths();
     let admin = Address::generate(env);
@@ -14,16 +36,7 @@ fn setup_period(env: &Env, period_id: BytesN<32>) -> (Address, Address, i128) {
     let distributable = EconomicSettlement::propose_period(
         env.clone(),
         operator.clone(),
-        period_id,
-        id(env, 2),
-        1_000,
-        200,
-        100,
-        100,
-        50,
-        50,
-        1,
-        id(env, 3),
+        proposal(env, period_id, id(env, 2), [1_000, 200, 100, 100, 50, 50], 1, id(env, 3)),
     )
     .unwrap();
     (admin, operator, distributable)
@@ -74,8 +87,9 @@ fn rejects_underfunded_period() {
     EconomicSettlement::set_operator(env.clone(), operator.clone(), true).unwrap();
 
     let result = EconomicSettlement::propose_period(
-        env.clone(), operator, id(&env, 8), id(&env, 9),
-        100, 70, 20, 20, 0, 0, 1, id(&env, 10),
+        env.clone(),
+        operator,
+        proposal(&env, id(&env, 8), id(&env, 9), [100, 70, 20, 20, 0, 0], 1, id(&env, 10)),
     );
     assert_eq!(result, Err(Error::InvalidDeductions));
 }
@@ -144,8 +158,9 @@ fn rejects_zero_policy_version() {
     EconomicSettlement::set_operator(env.clone(), operator.clone(), true).unwrap();
     assert_eq!(
         EconomicSettlement::propose_period(
-            env.clone(), operator, id(&env, 18), id(&env, 19),
-            100, 0, 0, 0, 0, 0, 0, id(&env, 20)
+            env.clone(),
+            operator,
+            proposal(&env, id(&env, 18), id(&env, 19), [100, 0, 0, 0, 0, 0], 0, id(&env, 20)),
         ),
         Err(Error::InvalidPolicyVersion)
     );
@@ -163,15 +178,17 @@ fn rejects_negative_revenue_and_negative_deductions() {
 
     assert_eq!(
         EconomicSettlement::propose_period(
-            env.clone(), operator.clone(), id(&env, 21), id(&env, 22),
-            -1, 0, 0, 0, 0, 0, 1, id(&env, 23)
+            env.clone(),
+            operator.clone(),
+            proposal(&env, id(&env, 21), id(&env, 22), [-1, 0, 0, 0, 0, 0], 1, id(&env, 23)),
         ),
         Err(Error::InvalidDeductions)
     );
     assert_eq!(
         EconomicSettlement::propose_period(
-            env.clone(), operator, id(&env, 24), id(&env, 25),
-            100, -1, 0, 0, 0, 0, 1, id(&env, 26)
+            env.clone(),
+            operator,
+            proposal(&env, id(&env, 24), id(&env, 25), [100, -1, 0, 0, 0, 0], 1, id(&env, 26)),
         ),
         Err(Error::InvalidDeductions)
     );
@@ -188,8 +205,9 @@ fn detects_deduction_sum_overflow() {
 
     assert_eq!(
         EconomicSettlement::propose_period(
-            env.clone(), operator, id(&env, 27), id(&env, 28),
-            i128::MAX, i128::MAX, 1, 0, 0, 0, 1, id(&env, 29)
+            env.clone(),
+            operator,
+            proposal(&env, id(&env, 27), id(&env, 28), [i128::MAX, i128::MAX, 1, 0, 0, 0], 1, id(&env, 29)),
         ),
         Err(Error::ArithmeticOverflow)
     );
@@ -206,16 +224,7 @@ fn rejects_duplicate_period_id() {
         EconomicSettlement::propose_period(
             env.clone(),
             operator,
-            period_id,
-            id(&env, 32),
-            1_000,
-            0,
-            0,
-            0,
-            0,
-            0,
-            1,
-            id(&env, 33),
+            proposal(&env, period_id, id(&env, 32), [1_000, 0, 0, 0, 0, 0], 1, id(&env, 33)),
         ),
         Err(Error::PeriodAlreadyExists)
     );
@@ -260,16 +269,7 @@ fn zero_distributable_period_can_settle_without_allocations() {
         EconomicSettlement::propose_period(
             env.clone(),
             operator.clone(),
-            period_id.clone(),
-            id(&env, 38),
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            1,
-            id(&env, 39),
+            proposal(&env, period_id.clone(), id(&env, 38), [0, 0, 0, 0, 0, 0], 1, id(&env, 39)),
         )
         .unwrap(),
         0
@@ -296,16 +296,7 @@ fn allocation_sum_overflow_is_rejected_without_state_mutation() {
     EconomicSettlement::propose_period(
         env.clone(),
         operator.clone(),
-        period_id.clone(),
-        id(&env, 42),
-        i128::MAX,
-        0,
-        0,
-        0,
-        0,
-        0,
-        1,
-        id(&env, 43),
+        proposal(&env, period_id.clone(), id(&env, 42), [i128::MAX, 0, 0, 0, 0, 0], 1, id(&env, 43)),
     )
     .unwrap();
     EconomicSettlement::approve_period(env.clone(), period_id.clone()).unwrap();
