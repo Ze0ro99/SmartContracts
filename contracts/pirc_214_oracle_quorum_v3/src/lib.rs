@@ -140,7 +140,9 @@ impl OracleQuorum {
             return Err(Error::AlreadyInitialized);
         }
         env.storage().instance().set(&DataKey::Admin, &admin);
-        env.storage().instance().set(&DataKey::Reporters, &Vec::<Address>::new(&env));
+        env.storage()
+            .instance()
+            .set(&DataKey::Reporters, &Vec::<Address>::new(&env));
         Ok(())
     }
 
@@ -164,7 +166,9 @@ impl OracleQuorum {
                 return Err(Error::InvalidPolicy);
             }
             reporters.push_back(reporter.clone());
-            env.storage().instance().set(&DataKey::Reporters, &reporters);
+            env.storage()
+                .instance()
+                .set(&DataKey::Reporters, &reporters);
         }
         env.storage()
             .persistent()
@@ -352,9 +356,15 @@ mod test {
             .configure_feed(&admin, &feed, &2, &300, &500, &unit)
             .unwrap();
 
-        client.submit_price(&r1, &feed, &100_000, &1, &unit).unwrap();
-        client.submit_price(&r2, &feed, &101_000, &1, &unit).unwrap();
-        client.submit_price(&r3, &feed, &900_000, &1, &unit).unwrap();
+        client
+            .submit_price(&r1, &feed, &100_000, &1, &unit)
+            .unwrap();
+        client
+            .submit_price(&r2, &feed, &101_000, &1, &unit)
+            .unwrap();
+        client
+            .submit_price(&r3, &feed, &900_000, &1, &unit)
+            .unwrap();
 
         let result = client.get_consensus(&feed).unwrap();
         assert_eq!(result.median_price, 101_000);
