@@ -298,7 +298,7 @@ mod test {
         let alice = Address::generate(&env);
         let bob = Address::generate(&env);
         let client = OusdTestTokenClient::new(&env, &id);
-        client.initialize(&admin).unwrap();
+        client.initialize(&admin);
         (env, id, admin, alice, bob)
     }
 
@@ -316,11 +316,11 @@ mod test {
     fn admin_mints_and_holders_transfer_and_burn() {
         let (env, id, admin, alice, bob) = setup();
         let client = OusdTestTokenClient::new(&env, &id);
-        client.mint(&admin, &alice, &1_000).unwrap();
-        client.transfer(&alice, &bob, &300).unwrap();
+        client.mint(&admin, &alice, &1_000);
+        client.transfer(&alice, &bob, &300);
         assert_eq!(client.balance(&alice), 700);
         assert_eq!(client.balance(&bob), 300);
-        client.burn(&bob, &100).unwrap();
+        client.burn(&bob, &100);
         assert_eq!(client.balance(&bob), 200);
         assert_eq!(client.total_supply(), 900);
     }
@@ -330,9 +330,9 @@ mod test {
         let (env, id, admin, alice, bob) = setup();
         let client = OusdTestTokenClient::new(&env, &id);
         let spender = Address::generate(&env);
-        client.mint(&admin, &alice, &500).unwrap();
-        client.approve(&alice, &spender, &250, &(env.ledger().sequence() + 20)).unwrap();
-        client.transfer_from(&spender, &alice, &bob, &100).unwrap();
+        client.mint(&admin, &alice, &500);
+        client.approve(&alice, &spender, &250, &(env.ledger().sequence() + 20));
+        client.transfer_from(&spender, &alice, &bob, &100);
         assert_eq!(client.allowance(&alice, &spender), 150);
         assert_eq!(client.balance(&bob), 100);
     }
@@ -342,7 +342,7 @@ mod test {
         let (env, id, admin, alice, bob) = setup();
         let client = OusdTestTokenClient::new(&env, &id);
         assert!(client.try_mint(&admin, &alice, &(MAX_SUPPLY + 1)).is_err());
-        client.mint(&admin, &alice, &100).unwrap();
+        client.mint(&admin, &alice, &100);
         assert!(client.try_transfer(&alice, &bob, &-1).is_err());
     }
 
@@ -376,7 +376,7 @@ mod test {
         let spender = Address::generate(&env);
         client.mint(&admin, &alice, &500).unwrap();
         let current = env.ledger().sequence();
-        client.approve(&alice, &spender, &200, &(current + 1)).unwrap();
+        client.approve(&alice, &spender, &200, &(current + 1));
         env.ledger().set_sequence_number(current + 2);
         assert_eq!(client.allowance(&alice, &spender), 0);
         assert!(client.try_transfer_from(&spender, &alice, &bob, &100).is_err());
