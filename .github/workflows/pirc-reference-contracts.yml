@@ -5,6 +5,7 @@ on:
     paths:
       - 'contracts/pirc_207_registry_v3/**'
       - 'contracts/pirc_214_oracle_v2/**'
+      - 'contracts/pirc_214_oracle_quorum_v3/**'
       - 'contracts/pirc_225_por_v2/**'
       - 'contracts/pirc_237_ai_oracle/**'
       - 'contracts/ousd_test_token/**'
@@ -32,4 +33,4 @@ jobs:
       - name: Test reference crates
         run: cargo test -p pirc-207-registry-v3 -p pirc-214-oracle-v2 -p pirc-214-oracle-quorum-v3 -p pirc-225-por-v2 -p pirc-237-ai-oracle -p ousd-test-token
       - name: Build Soroban WASM artifacts
-        run: cargo build --release --target wasm32v1-none -p pirc-207-registry-v3 -p pirc-214-oracle-v2 -p pirc-225-por-v2 -p pirc-237-ai-oracle -p ousd-test-token
+        run: cargo build --release --target wasm32v1-none -p pirc-207-registry-v3 -p pirc-214-oracle-v2 -p pirc-214-oracle-quorum-v3 -p pirc-225-por-v2 -p pirc-237-ai-oracle -p ousd-test-token
