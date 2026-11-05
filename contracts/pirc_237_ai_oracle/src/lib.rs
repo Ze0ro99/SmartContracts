@@ -125,6 +125,6 @@ mod test {
         client.set_updater(&admin, &updater, &true);
         client.submit(&updater, &asset, &500_000, &700_000, &1, &proof, &model);
         assert_eq!(client.get_latest(&asset).unwrap().sentiment_score, 700_000);
-        assert!(matches!(client.try_submit(&updater, &asset, &500_000, &700_000, &1, &proof, &model), Ok(Err(_))));
+        assert!(matches!(client.try_submit(&updater, &asset, &500_000, &700_000, &1, &proof, &model), Err(Ok(_))));
     }
 }
