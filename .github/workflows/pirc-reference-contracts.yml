@@ -25,12 +25,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.90.0
         with:
-          targets: wasm32v1-none
+          targets: wasm32-unknown-unknown
       - name: Formatting baseline notice
         run: echo "Reference crates contain pre-existing rustfmt drift; formatting is tracked separately while compile and test gates remain mandatory."
       - name: Test reference crates
         run: cargo test -p pirc-207-registry-v3 -p pirc-214-oracle-v2 -p pirc-214-oracle-quorum-v3 -p pirc-225-por-v2 -p pirc-237-ai-oracle -p ousd-test-token
       - name: Build Soroban WASM artifacts
-        run: cargo build --release --target wasm32v1-none -p pirc-207-registry-v3 -p pirc-214-oracle-v2 -p pirc-214-oracle-quorum-v3 -p pirc-225-por-v2 -p pirc-237-ai-oracle -p ousd-test-token
+        run: cargo build --release --target wasm32-unknown-unknown -p pirc-207-registry-v3 -p pirc-214-oracle-v2 -p pirc-214-oracle-quorum-v3 -p pirc-225-por-v2 -p pirc-237-ai-oracle -p ousd-test-token
