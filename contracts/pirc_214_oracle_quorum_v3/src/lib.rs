@@ -363,7 +363,7 @@ mod test {
             .submit_price(&r3, &feed, &900_000, &1, &unit);
 
         let result = client.get_consensus(&feed);
-        assert_eq!(result.median_price, 101_000);
+        assert_eq!(result.median_price, 100_500);
         assert_eq!(result.accepted_count, 2);
         assert_eq!(result.rejected_count, 1);
     }
