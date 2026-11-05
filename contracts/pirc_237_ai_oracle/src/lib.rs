@@ -121,10 +121,10 @@ mod test {
         let asset = String::from_str(&env, "PI/USD");
         let proof = BytesN::from_array(&env, &[5u8; 32]);
         let model = String::from_str(&env, "model-1");
-        client.initialize(&admin).unwrap();
-        client.set_updater(&admin, &updater, &true).unwrap();
-        client.submit(&updater, &asset, &500_000, &700_000, &1, &proof, &model).unwrap();
+        client.initialize(&admin);
+        client.set_updater(&admin, &updater, &true);
+        client.submit(&updater, &asset, &500_000, &700_000, &1, &proof, &model);
         assert_eq!(client.get_latest(&asset).unwrap().sentiment_score, 700_000);
-        assert!(client.submit(&updater, &asset, &500_000, &700_000, &1, &proof, &model).is_err());
+        assert!(client.try_submit(&updater, &asset, &500_000, &700_000, &1, &proof, &model).is_err());
     }
 }
