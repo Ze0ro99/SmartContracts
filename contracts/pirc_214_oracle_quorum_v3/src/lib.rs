@@ -125,7 +125,10 @@ impl OracleQuorum {
         let scaled = difference
             .checked_mul(10_000)
             .ok_or(Error::ArithmeticError)?;
-        Ok(scaled / reference <= max_bps as u128)
+        let allowed = reference
+            .checked_mul(max_bps as u128)
+            .ok_or(Error::ArithmeticError)?;
+        Ok(scaled <= allowed)
     }
 }
 
@@ -346,7 +349,7 @@ mod test {
         client.set_reporter(&admin, &r2, &true).unwrap();
         client.set_reporter(&admin, &r3, &true).unwrap();
         client
-            .configure_feed(&admin, &feed, &3, &300, &500, &unit)
+            .configure_feed(&admin, &feed, &2, &300, &500, &unit)
             .unwrap();
 
         client.submit_price(&r1, &feed, &100_000, &1, &unit).unwrap();
