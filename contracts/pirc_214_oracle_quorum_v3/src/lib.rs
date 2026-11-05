@@ -269,7 +269,7 @@ impl OracleQuorum {
         let reporters = Self::reporters(&env);
         let now = env.ledger().timestamp();
         let mut fresh = Vec::<u128>::new(&env);
-        let mut newest = 0u64;
+        let mut oldest = now;
         let mut rejected = 0u32;
 
         for index in 0..reporters.len() {
@@ -294,7 +294,7 @@ impl OracleQuorum {
                     rejected += 1;
                     continue;
                 }
-                newest = newest.max(value.updated_at);
+                oldest = oldest.min(value.updated_at);
                 fresh.push_back(value.price);
             }
         }
@@ -320,7 +320,7 @@ impl OracleQuorum {
             median_price,
             accepted_count: accepted.len(),
             rejected_count: rejected,
-            observed_at: newest,
+            observed_at: oldest,
             unit: policy.unit,
         })
     }
