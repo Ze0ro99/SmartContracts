@@ -13,6 +13,7 @@ See [Contract Coverage and Security Audit](docs/CONTRACT_COVERAGE_AND_SECURITY_A
 ## Integration branch reference modules
 - `contracts/pirc_207_registry_v3` — admin-controlled asset metadata registry.
 - `contracts/pirc_214_oracle_v2` — authenticated reporter observations with monotonic sequence and ledger timestamp.
+- `contracts/pirc_214_oracle_quorum_v3` — experimental feed-scoped multi-reporter quorum and median aggregation; Draft PR #1104, not yet compiled or approved for settlement.
 - `contracts/pirc_225_por_v2` — auditor-controlled reserve/liability attestations.
 
 These reference modules require compilation, test execution, security review and network-specific verification before use. They are not deployed.
