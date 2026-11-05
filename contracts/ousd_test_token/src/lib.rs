@@ -341,9 +341,9 @@ mod test {
     fn mint_above_cap_and_negative_transfer_are_rejected() {
         let (env, id, admin, alice, bob) = setup();
         let client = OusdTestTokenClient::new(&env, &id);
-        assert!(matches!(client.try_mint(&admin, &alice, &(MAX_SUPPLY + 1)), Ok(Err(_))));
+        assert!(matches!(client.try_mint(&admin, &alice, &(MAX_SUPPLY + 1)), Err(Ok(_))));
         client.mint(&admin, &alice, &100);
-        assert!(matches!(client.try_transfer(&alice, &bob, &-1), Ok(Err(_))));
+        assert!(matches!(client.try_transfer(&alice, &bob, &-1), Err(Ok(_))));
     }
 
     #[test]
@@ -351,22 +351,22 @@ mod test {
         let (env, id, _admin, alice, _bob) = setup();
         let client = OusdTestTokenClient::new(&env, &id);
         let stranger = Address::generate(&env);
-        assert!(matches!(client.try_mint(&stranger, &alice, &1), Ok(Err(_))));
+        assert!(matches!(client.try_mint(&stranger, &alice, &1), Err(Ok(_))));
     }
 
     #[test]
     fn second_initialization_is_rejected() {
         let (env, id, admin, _alice, _bob) = setup();
         let client = OusdTestTokenClient::new(&env, &id);
-        assert!(matches!(client.try_initialize(&admin), Ok(Err(_))));
+        assert!(matches!(client.try_initialize(&admin), Err(Ok(_))));
     }
 
     #[test]
     fn negative_mint_and_zero_burn_are_rejected() {
         let (env, id, admin, alice, _bob) = setup();
         let client = OusdTestTokenClient::new(&env, &id);
-        assert!(matches!(client.try_mint(&admin, &alice, &-1), Ok(Err(_))));
-        assert!(matches!(client.try_burn(&alice, &0), Ok(Err(_))));
+        assert!(matches!(client.try_mint(&admin, &alice, &-1), Err(Ok(_))));
+        assert!(matches!(client.try_burn(&alice, &0), Err(Ok(_))));
     }
 
     #[test]
@@ -379,6 +379,6 @@ mod test {
         client.approve(&alice, &spender, &200, &(current + 1));
         env.ledger().set_sequence_number(current + 2);
         assert_eq!(client.allowance(&alice, &spender), 0);
-        assert!(matches!(client.try_transfer_from(&spender, &alice, &bob, &100), Ok(Err(_))));
+        assert!(matches!(client.try_transfer_from(&spender, &alice, &bob, &100), Err(Ok(_))));
     }
 }
