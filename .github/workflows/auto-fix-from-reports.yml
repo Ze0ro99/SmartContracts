@@ -261,7 +261,6 @@ jobs:
 
       - name: Build WASM
         id: build
-        continue-on-error: true
         run: |
           set +e
           cargo build --target wasm32-unknown-unknown --release \
@@ -274,29 +273,25 @@ jobs:
           else
             echo "Build OK"
           fi
+          exit "$CODE"
 
       - name: Unit tests
         if: steps.build.outputs.code == '0'
-        continue-on-error: true
         run: |
-          set +e
-          cargo test --manifest-path "contracts/${{ matrix.contract }}/Cargo.toml" -- --nocapture || true
+          set -euo pipefail
+          cargo test --manifest-path "contracts/${{ matrix.contract }}/Cargo.toml" -- --nocapture
 
       - name: Install stellar-cli
         if: steps.build.outputs.code == '0' && github.event.inputs.enable_testnet_deploy == 'true'
-        continue-on-error: true
         run: |
-          set +e
-          cargo install --locked stellar-cli --version 23.0.0 2>/dev/null || \
-          cargo install --locked stellar-cli 2>/dev/null || \
-          cargo install --locked soroban-cli 2>/dev/null || true
-          stellar version 2>/dev/null || soroban version 2>/dev/null || echo "CLI not available"
+          set -euo pipefail
+          cargo install --locked stellar-cli --version 23.0.0
+          stellar version
 
       - name: Testnet deploy (Stellar Testnet + Friendbot)
         if: steps.build.outputs.code == '0' && github.event.inputs.enable_testnet_deploy == 'true'
-        continue-on-error: true
         run: |
-          set +e
+          set -euo pipefail
           CLI=""
           command -v stellar >/dev/null && CLI="stellar"
           command -v soroban >/dev/null && CLI="${CLI:-soroban}"
@@ -305,12 +300,11 @@ jobs:
             exit 1
           fi
 
-          $CLI keys generate ci-deployer --network testnet --fund 2>/dev/null || \
-          $CLI keys generate ci-deployer 2>/dev/null || true
+          $CLI keys generate ci-deployer --network testnet --fund
 
           $CLI network add testnet \
             --rpc-url "${{ env.STELLAR_RPC }}" \
-            --network-passphrase "${{ env.NETWORK_PASSPHRASE }}" 2>/dev/null || true
+            --network-passphrase "${{ env.NETWORK_PASSPHRASE }}"
 
           WASM=$(find target -name "*.wasm" 2>/dev/null | head -n 1)
           if [ -z "$WASM" ]; then
@@ -400,9 +394,8 @@ jobs:
 
       - name: Commit repairs if any
         if: ${{ github.event.inputs.push_fixes == 'true' }}
-        continue-on-error: true
         run: |
-          set +e
+          set -euo pipefail
           git config user.name "Auto-Fix-Testnet Bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
@@ -414,7 +407,7 @@ jobs:
 
           git checkout -B ${{ env.FIX_BRANCH }}
           git commit -m "fix(auto): repair contracts from reports + testnet pipeline [skip ci]"
-          git push origin ${{ env.FIX_BRANCH }} || echo "Push failed (non-blocking); existing branch history was preserved"
+          git push origin ${{ env.FIX_BRANCH }}
 
       - name: Master summary
         run: |
