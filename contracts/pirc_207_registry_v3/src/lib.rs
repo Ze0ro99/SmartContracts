@@ -117,7 +117,7 @@ mod test {
         let asset = BytesN::from_array(&env, &[7u8; 32]);
         let hash = BytesN::from_array(&env, &[9u8; 32]);
         client.initialize(&admin);
-        assert!(matches!(client.try_register_asset(&Address::generate(&env), &asset, &issuer, &hash, &7), Ok(Err(_))));
+        assert!(matches!(client.try_register_asset(&Address::generate(&env), &asset, &issuer, &hash, &7), Err(Ok(_))));
         client.register_asset(&admin, &asset, &issuer, &hash, &7);
         let record: AssetRecord = client.get_asset(&asset).unwrap();
         assert!(record.active);
@@ -138,6 +138,6 @@ mod test {
         let hash = BytesN::from_array(&env, &[2u8; 32]);
         client.initialize(&admin);
         client.register_asset(&admin, &asset, &issuer, &hash, &7);
-        assert!(matches!(client.try_register_asset(&admin, &asset, &issuer, &hash, &7), Ok(Err(_))));
+        assert!(matches!(client.try_register_asset(&admin, &asset, &issuer, &hash, &7), Err(Ok(_))));
     }
 }
