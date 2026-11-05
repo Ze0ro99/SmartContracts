@@ -116,13 +116,13 @@ mod test {
         let issuer = Address::generate(&env);
         let asset = BytesN::from_array(&env, &[7u8; 32]);
         let hash = BytesN::from_array(&env, &[9u8; 32]);
-        client.initialize(&admin).unwrap();
-        assert!(client.register_asset(&Address::generate(&env), &asset, &issuer, &hash, &7).is_err());
-        client.register_asset(&admin, &asset, &issuer, &hash, &7).unwrap();
+        client.initialize(&admin);
+        assert!(matches!(client.try_register_asset(&Address::generate(&env), &asset, &issuer, &hash, &7), Ok(Err(_))));
+        client.register_asset(&admin, &asset, &issuer, &hash, &7);
         let record: AssetRecord = client.get_asset(&asset).unwrap();
         assert!(record.active);
         assert_eq!(record.issuer, issuer);
-        client.set_asset_active(&admin, &asset, &false).unwrap();
+        client.set_asset_active(&admin, &asset, &false);
         assert!(!client.get_asset(&asset).unwrap().active);
     }
 
@@ -136,8 +136,8 @@ mod test {
         let issuer = Address::generate(&env);
         let asset = BytesN::from_array(&env, &[1u8; 32]);
         let hash = BytesN::from_array(&env, &[2u8; 32]);
-        client.initialize(&admin).unwrap();
-        client.register_asset(&admin, &asset, &issuer, &hash, &7).unwrap();
-        assert!(client.register_asset(&admin, &asset, &issuer, &hash, &7).is_err());
+        client.initialize(&admin);
+        client.register_asset(&admin, &asset, &issuer, &hash, &7);
+        assert!(matches!(client.try_register_asset(&admin, &asset, &issuer, &hash, &7), Ok(Err(_))));
     }
 }
