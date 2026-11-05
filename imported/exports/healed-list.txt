@@ -43,6 +43,7 @@ contracts/pirc_211/Cargo.toml
 contracts/pirc_212/Cargo.toml
 contracts/pirc_213/Cargo.toml
 contracts/pirc_214/Cargo.toml
+contracts/pirc_214_oracle_quorum_v3/Cargo.toml
 contracts/pirc_214_oracle_v2/Cargo.toml
 contracts/pirc_215/Cargo.toml
 contracts/pirc_216/Cargo.toml

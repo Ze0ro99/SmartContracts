@@ -45,6 +45,7 @@
     "pirc_212",
     "pirc_213",
     "pirc_214",
+    "pirc_214_oracle_quorum_v3",
     "pirc_214_oracle_v2",
     "pirc_215",
     "pirc_216",
@@ -113,5 +114,5 @@
     "pirc_economic_settlement",
     "subscription"
   ],
-  "last_run": "2026-11-05T07:34:55Z"
+  "last_run": "2026-11-05T14:08:32Z"
 }
