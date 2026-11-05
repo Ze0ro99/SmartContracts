@@ -374,7 +374,7 @@ mod test {
         let (env, id, admin, alice, bob) = setup();
         let client = OusdTestTokenClient::new(&env, &id);
         let spender = Address::generate(&env);
-        client.mint(&admin, &alice, &500).unwrap();
+        client.mint(&admin, &alice, &500);
         let current = env.ledger().sequence();
         client.approve(&alice, &spender, &200, &(current + 1));
         env.ledger().set_sequence_number(current + 2);
