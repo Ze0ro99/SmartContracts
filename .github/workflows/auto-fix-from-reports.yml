@@ -393,7 +393,7 @@ jobs:
           path: all-results/
 
       - name: Commit repairs if any
-        if: ${{ github.event.inputs.push_fixes == 'true' }}
+        if: ${{ github.event.inputs.push_fixes == 'true' && needs.fix-and-test.result == 'success' }}
         run: |
           set -euo pipefail
           git config user.name "Auto-Fix-Testnet Bot"
