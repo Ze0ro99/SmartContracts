@@ -1,0 +1,264 @@
+name: Pi Testnet Settlement Integration (Manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_pi_testnet_deploy:
+        description: "Explicitly approve deployment of the settlement test contract to Pi Testnet using Test Pi only"
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pi-testnet-settlement-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: inputs.confirm_pi_testnet_deploy == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.88"
+          components: rustfmt
+          targets: wasm32-unknown-unknown
+
+      - name: Format check
+        run: cargo fmt --manifest-path contracts/pirc_economic_settlement/Cargo.toml -- --check
+
+      - name: Unit tests
+        run: cargo test --manifest-path contracts/pirc_economic_settlement/Cargo.toml -- --nocapture
+
+      - name: Build settlement WASM
+        run: cargo build --manifest-path contracts/pirc_economic_settlement/Cargo.toml --target wasm32-unknown-unknown --release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pi-testnet-settlement-wasm
+          path: target/wasm32-unknown-unknown/release/pirc_economic_settlement.wasm
+          if-no-files-found: error
+          retention-days: 7
+
+  deploy-and-test:
+    if: inputs.confirm_pi_testnet_deploy == true
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: pi-testnet
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: pi-testnet-settlement-wasm
+          path: wasm/
+
+      - name: Install Stellar CLI
+        run: cargo install --locked stellar-cli
+
+      - name: Require Pi Testnet deployer secret
+        env:
+          PI_TESTNET_DEPLOYER_SECRET: ${{ secrets.PI_TESTNET_DEPLOYER_SECRET }}
+        run: |
+          set -euo pipefail
+          if [ -z "$PI_TESTNET_DEPLOYER_SECRET" ]; then
+            echo "::error::Add PI_TESTNET_DEPLOYER_SECRET to the pi-testnet GitHub Environment. Never paste the seed into chat or commit it."
+            exit 1
+          fi
+
+      - name: Configure Pi Testnet and import test identity
+        env:
+          PI_TESTNET_DEPLOYER_SECRET: ${{ secrets.PI_TESTNET_DEPLOYER_SECRET }}
+        run: |
+          set -euo pipefail
+          stellar network add pi-testnet \
+            --rpc-url "https://rpc.testnet.minepi.com" \
+            --network-passphrase "Pi Testnet"
+          printf '%s' "$PI_TESTNET_DEPLOYER_SECRET" | stellar keys add pi-deployer --secret-key
+          unset PI_TESTNET_DEPLOYER_SECRET
+          DEPLOYER=$(stellar keys address pi-deployer)
+          echo "PI_TESTNET_DEPLOYER=$DEPLOYER" >> "$GITHUB_ENV"
+          echo "Configured Pi Testnet identity: $DEPLOYER"
+
+      - name: Verify Pi Testnet Horizon network identity
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 3 --retry-delay 2 \
+            https://api.testnet.minepi.com/ |
+            python -c 'import json,sys; d=json.load(sys.stdin); actual=d.get("network_passphrase"); assert actual == "Pi Testnet", f"Unexpected Pi Testnet passphrase: {actual!r}"; print("Verified Horizon network passphrase:", actual)'
+
+      - name: Verify Pi Testnet RPC before deployment
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 3 --retry-delay 2 \
+            https://rpc.testnet.minepi.com \
+            -H "Content-Type: application/json" \
+            -d '{"jsonrpc":"2.0","id":1,"method":"getHealth"}' |
+            python -c 'import json,sys; d=json.load(sys.stdin); assert not d.get("error") and d.get("result") is not None, d; print(json.dumps(d["result"]))'
+          curl --fail --silent --show-error --retry 3 --retry-delay 2 \
+            https://rpc.testnet.minepi.com \
+            -H "Content-Type: application/json" \
+            -d '{"jsonrpc":"2.0","id":2,"method":"getLatestLedger"}' |
+            python -c 'import json,sys; d=json.load(sys.stdin); assert not d.get("error") and d.get("result") is not None, d; print(json.dumps(d["result"]))'
+
+      - name: Deploy settlement contract to Pi Testnet
+        run: |
+          set -euo pipefail
+          WASM="wasm/pirc_economic_settlement.wasm"
+          test -s "$WASM"
+          CID=$(stellar contract deploy --wasm "$WASM" --source-account pi-deployer --network pi-testnet | tail -n 1)
+          if [[ ! "$CID" =~ ^C[A-Z2-7]{55}$ ]]; then
+            echo "::error::Deployment did not return a valid Soroban contract ID."
+            exit 1
+          fi
+          echo "PI_TESTNET_CONTRACT_ID=$CID" >> "$GITHUB_ENV"
+          {
+            echo "## Pi Testnet settlement deployment"
+            echo "- Network: Pi Testnet"
+            echo "- Contract: $CID"
+            echo "- WASM: pirc_economic_settlement.wasm"
+            echo "- Purpose: accounting-state integration test only; no Pi token transfer or redemption"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Initialize contract and enable test operator
+        run: |
+          set -euo pipefail
+          stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source-account pi-deployer --network pi-testnet --send=yes -- initialize --admin "$PI_TESTNET_DEPLOYER"
+          stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source-account pi-deployer --network pi-testnet --send=yes -- set_operator --operator "$PI_TESTNET_DEPLOYER" --enabled true
+
+      - name: Exercise settlement lifecycle and rejection guards
+        run: |
+          set -euo pipefail
+          expect_contract_error() {
+            local expected_code="$1"
+            local label="$2"
+            shift 2
+            local output_file="/tmp/pi-testnet-contract-error.log"
+            if "$@" >"$output_file" 2>&1; then
+              cat "$output_file"
+              echo "::error::$label unexpectedly succeeded."
+              exit 1
+            fi
+            if ! grep -Eq "Contract, #${expected_code}([^0-9]|$)" "$output_file"; then
+              cat "$output_file"
+              echo "::error::$label failed for a reason other than expected contract error #${expected_code}."
+              exit 1
+            fi
+            echo "$label rejected with expected contract error #${expected_code}."
+          }
+
+          PERIOD_ID=$(printf 'pirc-settlement-%s' "$GITHUB_RUN_ID" | sha256sum | cut -d' ' -f1)
+          ASSET_ID=$(printf 'pi-testnet-demo-asset' | sha256sum | cut -d' ' -f1)
+          INPUT_DIGEST=$(printf 'pirc-test-input-%s' "$GITHUB_RUN_ID" | sha256sum | cut -d' ' -f1)
+          EVIDENCE_HASH=$(printf 'pirc-test-evidence-%s' "$GITHUB_RUN_ID" | sha256sum | cut -d' ' -f1)
+          SETTLEMENT_DIGEST=$(printf 'pirc-test-settlement-%s' "$GITHUB_RUN_ID" | sha256sum | cut -d' ' -f1)
+
+          stellar keys generate pi-test-participant --network pi-testnet
+          stellar keys generate pi-test-overflow-participant --network pi-testnet
+          PARTICIPANT=$(stellar keys address pi-test-participant)
+          OVERFLOW_PARTICIPANT=$(stellar keys address pi-test-overflow-participant)
+
+          stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source-account pi-deployer --network pi-testnet --send=yes -- propose_period \
+            --operator "$PI_TESTNET_DEPLOYER" \
+            --period_id "$PERIOD_ID" \
+            --asset_id "$ASSET_ID" \
+            --collected_revenue 1000 \
+            --operating_costs 100 \
+            --tax_and_statutory 50 \
+            --refunds_and_due_liabilities 0 \
+            --reserve_replenishment 0 \
+            --approved_commitments 0 \
+            --policy_version 1 \
+            --input_digest "$INPUT_DIGEST"
+
+          stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source-account pi-deployer --network pi-testnet --send=yes -- approve_period --period_id "$PERIOD_ID"
+
+          stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source-account pi-deployer --network pi-testnet --send=yes -- record_allocation \
+            --operator "$PI_TESTNET_DEPLOYER" --period_id "$PERIOD_ID" \
+            --participant "$PARTICIPANT" --amount 850 --evidence_hash "$EVIDENCE_HASH"
+
+          expect_contract_error 8 "Duplicate allocation" \
+            stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source-account pi-deployer --network pi-testnet --send=no -- record_allocation \
+            --operator "$PI_TESTNET_DEPLOYER" --period_id "$PERIOD_ID" \
+            --participant "$PARTICIPANT" --amount 1 --evidence_hash "$EVIDENCE_HASH"
+
+          expect_contract_error 9 "Over-allocation" \
+            stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source-account pi-deployer --network pi-testnet --send=no -- record_allocation \
+            --operator "$PI_TESTNET_DEPLOYER" --period_id "$PERIOD_ID" \
+            --participant "$OVERFLOW_PARTICIPANT" --amount 1 --evidence_hash "$EVIDENCE_HASH"
+
+          stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source-account pi-deployer --network pi-testnet --send=yes -- settle_period \
+            --operator "$PI_TESTNET_DEPLOYER" --period_id "$PERIOD_ID" --settlement_digest "$SETTLEMENT_DIGEST"
+
+          expect_contract_error 11 "Double settlement" \
+            stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source-account pi-deployer --network pi-testnet --send=no -- settle_period \
+            --operator "$PI_TESTNET_DEPLOYER" --period_id "$PERIOD_ID" --settlement_digest "$SETTLEMENT_DIGEST"
+
+          expect_contract_error 7 "Post-settlement mutation" \
+            stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source-account pi-deployer --network pi-testnet --send=no -- record_allocation \
+            --operator "$PI_TESTNET_DEPLOYER" --period_id "$PERIOD_ID" \
+            --participant "$OVERFLOW_PARTICIPANT" --amount 1 --evidence_hash "$EVIDENCE_HASH"
+
+          stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source-account pi-deployer --network pi-testnet -- get_period --period_id "$PERIOD_ID" | tee pi-testnet-period-readback.txt
+          stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source-account pi-deployer --network pi-testnet -- get_allocation --period_id "$PERIOD_ID" --participant "$PARTICIPANT" | tee pi-testnet-allocation-readback.txt
+
+          stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source-account pi-deployer --network pi-testnet --send=yes -- set_operator --operator "$PI_TESTNET_DEPLOYER" --enabled false
+
+          NEXT_PERIOD=$(printf 'pirc-revoked-operator-%s' "$GITHUB_RUN_ID" | sha256sum | cut -d' ' -f1)
+          expect_contract_error 3 "Revoked operator" \
+            stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source-account pi-deployer --network pi-testnet --send=no -- propose_period \
+            --operator "$PI_TESTNET_DEPLOYER" --period_id "$NEXT_PERIOD" --asset_id "$ASSET_ID" \
+            --collected_revenue 1000 --operating_costs 100 --tax_and_statutory 50 \
+            --refunds_and_due_liabilities 0 --reserve_replenishment 0 --approved_commitments 0 \
+            --policy_version 1 --input_digest "$INPUT_DIGEST"
+
+          {
+            echo "- Period ID: $PERIOD_ID"
+            echo "- Distributable test units: 850"
+            echo "- Duplicate allocation: rejected"
+            echo "- Over-allocation: rejected"
+            echo "- Double settlement: rejected"
+            echo "- Post-settlement mutation: rejected"
+            echo "- Revoked operator: rejected"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify deployed contract instance read-back
+        env:
+          PI_TESTNET_CONTRACT_ID: ${{ env.PI_TESTNET_CONTRACT_ID }}
+        run: |
+          set -euo pipefail
+          python -m pip install "stellar-sdk>=14,<16"
+          python - <<'PY'
+          from stellar_sdk import SorobanServer, xdr
+          from stellar_sdk.soroban_server import Durability
+          import os
+
+          server = SorobanServer("https://rpc.testnet.minepi.com")
+          try:
+              key = xdr.SCVal(type=xdr.SCValType.SCV_LEDGER_KEY_CONTRACT_INSTANCE)
+              entry = server.get_contract_data(os.environ["PI_TESTNET_CONTRACT_ID"], key, Durability.PERSISTENT)
+              if entry is None:
+                  raise SystemExit("Pi Testnet contract instance read-back failed")
+              print("Pi Testnet contract instance is present.")
+          finally:
+              server.close()
+          PY
+
+      - name: Upload settlement read-back evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pi-testnet-settlement-evidence
+          path: |
+            pi-testnet-period-readback.txt
+            pi-testnet-allocation-readback.txt
+          if-no-files-found: ignore
+          retention-days: 30
