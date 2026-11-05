@@ -64,16 +64,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Formatting baseline notice
         run: echo "Reference contract formatting debt is tracked separately; compile and test gates remain mandatory."
-      - name: Resolve and export canonical workspace lockfile
-        run: cargo metadata --format-version 1 > /tmp/workspace-metadata.json
-      - name: Upload resolved lockfile for review
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: resolved-smartcontracts-cargo-lock
-          path: Cargo.lock
-          retention-days: 1
-          if-no-files-found: error
+      - name: Validate committed workspace lockfile
+        run: cargo metadata --locked --format-version 1 > /tmp/workspace-metadata.json
       - name: Compile workspace
         run: cargo check --workspace --locked
       - name: Run workspace tests
