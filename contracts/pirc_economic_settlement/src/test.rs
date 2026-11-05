@@ -6,7 +6,7 @@ fn id(env: &Env, byte: u8) -> BytesN<32> {
 }
 
 fn proposal(
-    env: &Env,
+    _env: &Env,
     period_id: BytesN<32>,
     asset_id: BytesN<32>,
     amounts: [i128; 6],
