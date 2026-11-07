@@ -97,10 +97,10 @@ impl OracleQuorum {
                 if previous <= key {
                     break;
                 }
-                values.set(j, previous).map_err(|_| Error::InternalError)?;
+                values.set(j, previous);
                 j -= 1;
             }
-            values.set(j, key).map_err(|_| Error::InternalError)?;
+            values.set(j, key);
         }
 
         if len % 2 == 1 {
@@ -348,26 +348,22 @@ mod test {
         let feed = String::from_str(&env, "PI/USD");
         let unit = String::from_str(&env, "USD_PER_PI");
 
-        client.initialize(&admin).unwrap();
-        client.set_reporter(&admin, &r1, &true).unwrap();
-        client.set_reporter(&admin, &r2, &true).unwrap();
-        client.set_reporter(&admin, &r3, &true).unwrap();
+        client.initialize(&admin);
+        client.set_reporter(&admin, &r1, &true);
+        client.set_reporter(&admin, &r2, &true);
+        client.set_reporter(&admin, &r3, &true);
         client
-            .configure_feed(&admin, &feed, &2, &300, &500, &unit)
-            .unwrap();
+            .configure_feed(&admin, &feed, &2, &300, &500, &unit);
 
         client
-            .submit_price(&r1, &feed, &100_000, &1, &unit)
-            .unwrap();
+            .submit_price(&r1, &feed, &100_000, &1, &unit);
         client
-            .submit_price(&r2, &feed, &101_000, &1, &unit)
-            .unwrap();
+            .submit_price(&r2, &feed, &101_000, &1, &unit);
         client
-            .submit_price(&r3, &feed, &900_000, &1, &unit)
-            .unwrap();
+            .submit_price(&r3, &feed, &900_000, &1, &unit);
 
-        let result = client.get_consensus(&feed).unwrap();
-        assert_eq!(result.median_price, 101_000);
+        let result = client.get_consensus(&feed);
+        assert_eq!(result.median_price, 100_500);
         assert_eq!(result.accepted_count, 2);
         assert_eq!(result.rejected_count, 1);
     }

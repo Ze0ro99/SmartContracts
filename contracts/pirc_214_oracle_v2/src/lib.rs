@@ -110,11 +110,11 @@ mod test {
         let reporter = Address::generate(&env);
         let feed = String::from_str(&env, "PI/USD");
         let unit = String::from_str(&env, "USD_PER_PI");
-        client.initialize(&admin).unwrap();
-        assert!(client.set_reporter(&Address::generate(&env), &reporter, &true).is_err());
-        client.set_reporter(&admin, &reporter, &true).unwrap();
-        client.update_price(&reporter, &feed, &123_000_000, &1, &unit).unwrap();
+        client.initialize(&admin);
+        assert!(matches!(client.try_set_reporter(&Address::generate(&env), &reporter, &true), Err(Ok(_))));
+        client.set_reporter(&admin, &reporter, &true);
+        client.update_price(&reporter, &feed, &123_000_000, &1, &unit);
         assert_eq!(client.get_latest(&feed).unwrap().price, 123_000_000);
-        assert!(client.update_price(&reporter, &feed, &124_000_000, &1, &unit).is_err());
+        assert!(matches!(client.try_update_price(&reporter, &feed, &124_000_000, &1, &unit), Err(Ok(_))));
     }
 }
