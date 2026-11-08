@@ -80,3 +80,7 @@ Emit stable events for initialization, mint, burn, lock, release, fee collection
 ## 9. Release evidence
 
 A release must pin PiRC spec revision, source commit, Rust/Soroban SDK, toolchain, lockfile, WASM hash, test results, network passphrase, contract ID, deploy transaction, initialization transaction, live read-back, reviewer and remediation status. A successful compile or unit test is not a security audit or production approval.
+
+## 10. PiRC-101 live IPPR and QWF separation
+
+The Soroban reference controller in `contracts/pirc_101_monetary` uses the PiRC-214 median as the market input and re-bases `IPPR = median(PI/USD) * 10,000,000` on every accepted snapshot. QWF is a separate governance-controlled state; it is not the IPPR multiplier. The reflexive constraint is `Phi = (L_n * IPPR) / QWF`. Missing/stale velocity evidence makes Phi unavailable. These values are references and cannot independently authorize minting, redemption, collateral claims, wallet conversion or settlement.
