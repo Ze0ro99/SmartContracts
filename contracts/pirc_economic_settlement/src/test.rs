@@ -47,7 +47,7 @@ fn settles_only_after_exact_conservation() {
     let env = Env::default();
     
     let contract_id = env.register(EconomicSettlement, ());
-    env.as_contract(&contract_id, || {let period_id = id(&env, 1);
+    env.clone().as_contract(&contract_id, || {let period_id = id(&env, 1);
     let (admin, operator, distributable) = setup_period(&env, period_id.clone());
     assert_eq!(distributable, 500);
 
@@ -85,7 +85,7 @@ fn rejects_underfunded_period() {
     let env = Env::default();
     
     let contract_id = env.register(EconomicSettlement, ());
-    env.as_contract(&contract_id, || {env.mock_all_auths();
+    env.clone().as_contract(&contract_id, || {env.mock_all_auths();
     let admin = Address::generate(&env);
     let operator = Address::generate(&env);
     EconomicSettlement::initialize(env.clone(), admin).unwrap();
@@ -105,7 +105,7 @@ fn rejects_zero_allocation_and_duplicate_participant() {
     let env = Env::default();
     
     let contract_id = env.register(EconomicSettlement, ());
-    env.as_contract(&contract_id, || {let period_id = id(&env, 11);
+    env.clone().as_contract(&contract_id, || {let period_id = id(&env, 11);
     let (_, operator, _) = setup_period(&env, period_id.clone());
     EconomicSettlement::approve_period(env.clone(), period_id.clone()).unwrap();
     let participant = Address::generate(&env);
@@ -140,7 +140,7 @@ fn rejects_allocation_above_remaining_budget() {
     let env = Env::default();
     
     let contract_id = env.register(EconomicSettlement, ());
-    env.as_contract(&contract_id, || {let period_id = id(&env, 15);
+    env.clone().as_contract(&contract_id, || {let period_id = id(&env, 15);
     let (_, operator, _) = setup_period(&env, period_id.clone());
     EconomicSettlement::approve_period(env.clone(), period_id.clone()).unwrap();
     let participant_a = Address::generate(&env);
@@ -165,7 +165,7 @@ fn rejects_zero_policy_version() {
     let env = Env::default();
     
     let contract_id = env.register(EconomicSettlement, ());
-    env.as_contract(&contract_id, || {env.mock_all_auths();
+    env.clone().as_contract(&contract_id, || {env.mock_all_auths();
     let admin = Address::generate(&env);
     let operator = Address::generate(&env);
     EconomicSettlement::initialize(env.clone(), admin).unwrap();
@@ -187,7 +187,7 @@ fn rejects_negative_revenue_and_negative_deductions() {
     let env = Env::default();
     
     let contract_id = env.register(EconomicSettlement, ());
-    env.as_contract(&contract_id, || {env.mock_all_auths();
+    env.clone().as_contract(&contract_id, || {env.mock_all_auths();
     let admin = Address::generate(&env);
     let operator = Address::generate(&env);
     EconomicSettlement::initialize(env.clone(), admin).unwrap();
@@ -217,7 +217,7 @@ fn detects_deduction_sum_overflow() {
     let env = Env::default();
     
     let contract_id = env.register(EconomicSettlement, ());
-    env.as_contract(&contract_id, || {env.mock_all_auths();
+    env.clone().as_contract(&contract_id, || {env.mock_all_auths();
     let admin = Address::generate(&env);
     let operator = Address::generate(&env);
     EconomicSettlement::initialize(env.clone(), admin).unwrap();
@@ -240,7 +240,7 @@ fn rejects_duplicate_period_id() {
     let env = Env::default();
     
     let contract_id = env.register(EconomicSettlement, ());
-    env.as_contract(&contract_id, || {let period_id = id(&env, 31);
+    env.clone().as_contract(&contract_id, || {let period_id = id(&env, 31);
     let (_, operator, _) = setup_period(&env, period_id.clone());
 
     assert_eq!(
@@ -259,7 +259,7 @@ fn revoked_operator_cannot_record_or_settle() {
     let env = Env::default();
     
     let contract_id = env.register(EconomicSettlement, ());
-    env.as_contract(&contract_id, || {let period_id = id(&env, 34);
+    env.clone().as_contract(&contract_id, || {let period_id = id(&env, 34);
     let (_, operator, _) = setup_period(&env, period_id.clone());
     EconomicSettlement::approve_period(env.clone(), period_id.clone()).unwrap();
     EconomicSettlement::set_operator(env.clone(), operator.clone(), false).unwrap();
@@ -287,7 +287,7 @@ fn zero_distributable_period_can_settle_without_allocations() {
     let env = Env::default();
     
     let contract_id = env.register(EconomicSettlement, ());
-    env.as_contract(&contract_id, || {env.mock_all_auths();
+    env.clone().as_contract(&contract_id, || {env.mock_all_auths();
     let admin = Address::generate(&env);
     let operator = Address::generate(&env);
     let period_id = id(&env, 37);
@@ -319,7 +319,7 @@ fn allocation_sum_overflow_is_rejected_without_state_mutation() {
     let env = Env::default();
     
     let contract_id = env.register(EconomicSettlement, ());
-    env.as_contract(&contract_id, || {env.mock_all_auths();
+    env.clone().as_contract(&contract_id, || {env.mock_all_auths();
     let admin = Address::generate(&env);
     let operator = Address::generate(&env);
     let period_id = id(&env, 41);
@@ -363,7 +363,7 @@ fn settled_period_rejects_late_allocations() {
     let env = Env::default();
     
     let contract_id = env.register(EconomicSettlement, ());
-    env.as_contract(&contract_id, || {let period_id = id(&env, 46);
+    env.clone().as_contract(&contract_id, || {let period_id = id(&env, 46);
     let (_, operator, distributable) = setup_period(&env, period_id.clone());
     EconomicSettlement::approve_period(env.clone(), period_id.clone()).unwrap();
     let participant = Address::generate(&env);
