@@ -10,7 +10,7 @@ This is a test-only asset contract. It does not represent Pi, OUSD backing, a US
 
 - Configurable name, symbol, decimals (0–18) and hard maximum supply.
 - Admin-only minting with checked supply arithmetic.
-- Authenticated transfer and burn.
+- Authenticated transfer and burn, including allowance-backed delegated burn.
 - Allowance approval with ledger expiration and delegated transfer.
 - Checked balance/supply arithmetic and transfer/mint/burn/approval events.
 
