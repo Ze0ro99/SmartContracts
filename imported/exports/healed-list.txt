@@ -5,6 +5,7 @@ contracts/pirc_1/Cargo.toml
 contracts/pirc_10/Cargo.toml
 contracts/pirc_100/Cargo.toml
 contracts/pirc_101/Cargo.toml
+contracts/pirc_101_monetary/Cargo.toml
 contracts/pirc_102/Cargo.toml
 contracts/pirc_103/Cargo.toml
 contracts/pirc_105/Cargo.toml

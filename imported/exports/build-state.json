@@ -7,6 +7,7 @@
     "pirc_10",
     "pirc_100",
     "pirc_101",
+    "pirc_101_monetary",
     "pirc_102",
     "pirc_103",
     "pirc_105",
@@ -116,5 +117,5 @@
     "pirc_test_asset",
     "subscription"
   ],
-  "last_run": "2026-11-08T16:52:28Z"
+  "last_run": "2026-11-08T18:40:16Z"
 }
