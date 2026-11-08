@@ -870,6 +870,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
+name = "pidex_amm"
+version = "1.0.0"
+dependencies = [
+ "soroban-sdk",
+]
+
+[[package]]
 name = "pirc-1"
 version = "0.1.0"
 dependencies = [
@@ -1635,6 +1642,13 @@ dependencies = [
 [[package]]
 name = "pirc-economic-settlement"
 version = "0.1.0"
+dependencies = [
+ "soroban-sdk",
+]
+
+[[package]]
+name = "pirc-test-asset"
+version = "1.0.0"
 dependencies = [
  "soroban-sdk",
 ]

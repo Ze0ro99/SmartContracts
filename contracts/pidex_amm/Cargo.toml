@@ -1,0 +1,15 @@
+[package]
+name = "pidex_amm"
+version = "1.0.0"
+edition = "2021"
+license-file = "../../LICENSE"
+description = "PiDEX constant-product AMM reference contract"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+soroban-sdk = { workspace = true }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }

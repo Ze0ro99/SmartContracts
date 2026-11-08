@@ -1,3 +1,9 @@
+> **Implementation status: SCAFFOLD — NOT PiRC-2 READY OR TESTNET-VERIFIED**
+>
+> The current `src/lib.rs` implementation exposes only `initialize`, `mint`, `transfer`, `subscribe(user, plan)`, `balance_of`, and `ping`. It does **not** implement the service/subscription lifecycle described below (including `register_service`, paid subscription creation, token allowances, recurring `process` charges, cancellation/expiry rules, or the documented events and error types).
+>
+> Treat the API description below as a target specification, not as the current contract ABI. Do not deploy this crate as a production subscription contract, use it to authorize PiDEX trades, or mark PiRC-2 as implemented until the source, tests, generated ABI, deployment evidence, and read-back all match. PiDEX must remain fail-closed while this gap exists.
+
 # Paid Subscriptions Smart Contract
 
 A Soroban smart contract for recurring paid subscriptions on the Pi Network. Merchants register services with configurable pricing and billing periods; subscribers pay using standard Stellar asset tokens via allowance-based recurring charges.

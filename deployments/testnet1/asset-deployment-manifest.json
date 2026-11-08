@@ -1,0 +1,127 @@
+{
+  "schema_version": "1.0.0",
+  "network": {
+    "network_id": "pi-testnet1",
+    "alias": "Testnet1",
+    "canonical_name": "Pi Testnet",
+    "horizon_url": "https://api.testnet.minepi.com",
+    "soroban_rpc_url": "https://rpc.testnet.minepi.com",
+    "network_passphrase": "Pi Testnet",
+    "soroban_protocol_expected": 28,
+    "identity_verified_by_read_only_probe": true,
+    "deployment_enabled": false
+  },
+  "token_contract": {
+    "crate": "contracts/pirc_test_asset",
+    "wasm_artifact": "target/wasm32-unknown-unknown/release/pirc_test_asset.wasm",
+    "status": "SOURCE_ADDED_CI_PENDING_NOT_DEPLOYED"
+  },
+  "registry_contract": {
+    "crate": "contracts/pirc_207_registry_v3",
+    "contract_id": null,
+    "status": "NOT_DEPLOYED"
+  },
+  "assets": [
+    {
+      "key": "layer-red",
+      "name": "PiRC Red Test Asset",
+      "symbol": "PIRRED",
+      "decimals": 7,
+      "max_supply": "1000000000000000",
+      "contract_id": null,
+      "registry_status": "NOT_DEPLOYED"
+    },
+    {
+      "key": "layer-orange",
+      "name": "PiRC Orange Test Asset",
+      "symbol": "PIRORG",
+      "decimals": 7,
+      "max_supply": "1000000000000000",
+      "contract_id": null,
+      "registry_status": "NOT_DEPLOYED"
+    },
+    {
+      "key": "layer-yellow",
+      "name": "PiRC Yellow Test Asset",
+      "symbol": "PIRYEL",
+      "decimals": 7,
+      "max_supply": "1000000000000000",
+      "contract_id": null,
+      "registry_status": "NOT_DEPLOYED"
+    },
+    {
+      "key": "layer-green",
+      "name": "PiRC Green Test Asset",
+      "symbol": "PIRGRN",
+      "decimals": 7,
+      "max_supply": "1000000000000000",
+      "contract_id": null,
+      "registry_status": "NOT_DEPLOYED"
+    },
+    {
+      "key": "layer-blue",
+      "name": "PiRC Blue Test Asset",
+      "symbol": "PIRBLU",
+      "decimals": 7,
+      "max_supply": "1000000000000000",
+      "contract_id": null,
+      "registry_status": "NOT_DEPLOYED"
+    },
+    {
+      "key": "layer-indigo",
+      "name": "PiRC Indigo Test Asset",
+      "symbol": "PIRIND",
+      "decimals": 7,
+      "max_supply": "1000000000000000",
+      "contract_id": null,
+      "registry_status": "NOT_DEPLOYED"
+    },
+    {
+      "key": "layer-purple",
+      "name": "PiRC Purple Test Asset",
+      "symbol": "PIRPUR",
+      "decimals": 7,
+      "max_supply": "1000000000000000",
+      "contract_id": null,
+      "registry_status": "NOT_DEPLOYED"
+    }
+  ],
+  "migration": {
+    "current_registry_keys": [
+      "root",
+      "sacral",
+      "solar",
+      "heart",
+      "throat",
+      "crown",
+      "gold-unmapped"
+    ],
+    "canonical_color_order": [
+      "Red",
+      "Orange",
+      "Yellow",
+      "Green",
+      "Blue",
+      "Indigo",
+      "Purple"
+    ],
+    "mapping_approved": false,
+    "note": "Do not map the current chakra-like keys or Gold entry to canonical colors without an approved PiRC registry migration."
+  },
+  "evidence": {
+    "deployment_transaction": null,
+    "deployed_wasm_hash": null,
+    "contract_ids": null,
+    "initialization_readback": null,
+    "issuer_readback": null,
+    "asset_balance_readback": null,
+    "last_checked_at": "2026-11-08T13:45:06Z"
+  },
+  "safety": {
+    "test_only": true,
+    "represents_real_pi": false,
+    "usd_peg": false,
+    "reserves_or_redemption": false,
+    "mainnet_reuse_prohibited": true
+  }
+}
