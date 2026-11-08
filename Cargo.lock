@@ -905,6 +905,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "pirc-101-monetary"
+version = "0.1.0"
+dependencies = [
+ "soroban-sdk",
+]
+
+[[package]]
 name = "pirc-102"
 version = "0.1.0"
 dependencies = [
