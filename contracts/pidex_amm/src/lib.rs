@@ -348,7 +348,7 @@ fn isqrt(n: i128) -> i128 {
 
 #[cfg(test)]
 mod test {
-    use super::{isqrt, Error, PidexAmm, PidexAmmClient};
+    use super::{isqrt, PidexAmm, PidexAmmClient};
     use soroban_sdk::{contract, contractimpl, testutils::Address as _, Address, BytesN, Env};
 
     #[contract]
