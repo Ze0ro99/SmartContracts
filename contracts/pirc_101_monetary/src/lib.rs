@@ -240,9 +240,10 @@ impl PiRc101Monetary {
         let oracle: Address = env.storage().instance().get(&DataKey::Oracle).ok_or(Error::NotInitialized)?;
         let feed_id: String = env.storage().instance().get(&DataKey::FeedId).ok_or(Error::NotInitialized)?;
         let expected_unit: String = env.storage().instance().get(&DataKey::ExpectedUnit).ok_or(Error::NotInitialized)?;
-        let consensus = OracleQuorumClient::new(&env, &oracle)
-            .get_consensus(&feed_id)
-            .map_err(|_| Error::OracleUnavailable)?;
+        let consensus = match OracleQuorumClient::new(&env, &oracle).try_get_consensus(&feed_id) {
+            Ok(Ok(value)) => value,
+            _ => return Err(Error::OracleUnavailable),
+        };
         if consensus.median_price == 0 {
             return Err(Error::OracleUnavailable);
         }
