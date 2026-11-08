@@ -303,7 +303,7 @@ mod test {
         Address, Env, String,
     };
 
-    fn setup() -> (Env, Address, Address, Address, Address, PiRcTestAssetClient<'static>) {
+    fn setup() -> (Env, Address, Address, Address, Address) {
         let env = Env::default();
         env.mock_all_auths();
         let id = env.register(PiRcTestAsset, ());
@@ -318,12 +318,13 @@ mod test {
             &7,
             &1_000_000_000,
         );
-        (env, id, admin, alice, bob, client)
+        (env, id, admin, alice, bob)
     }
 
     #[test]
     fn metadata_mint_transfer_and_burn_work() {
-        let (env, _id, admin, alice, bob, client) = setup();
+        let (env, id, admin, alice, bob) = setup();
+        let client = PiRcTestAssetClient::new(&env, &id);
         assert_eq!(client.name(), String::from_str(&env, "PiRC Test Asset"));
         assert_eq!(client.symbol(), String::from_str(&env, "PIT"));
         assert_eq!(client.decimals(), 7);
@@ -356,7 +357,8 @@ mod test {
 
     #[test]
     fn unauthorized_mint_and_supply_cap_are_rejected() {
-        let (env, _id, admin, alice, _bob, client) = setup();
+        let (env, id, admin, alice, _bob) = setup();
+        let client = PiRcTestAssetClient::new(&env, &id);
         let attacker = Address::generate(&env);
         assert!(matches!(
             client.try_mint(&attacker, &alice, &100),
