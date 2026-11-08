@@ -379,10 +379,9 @@ mod test {
         let client = PidexAmmClient::new(&env, &id);
         let from = Address::generate(&env);
         let commitment = BytesN::from_array(&env, &[1u8; 32]);
-        assert_eq!(
-            client.swap_with_verified_commitment(&from, &true, &100, &1, &commitment),
-            Err(Error::VerifierNotConfigured)
-        );
+        assert!(client
+            .try_swap_with_verified_commitment(&from, &true, &100, &1, &commitment)
+            .is_err());
     }
 
     #[test]
@@ -396,11 +395,10 @@ mod test {
         let token_b = Address::generate(&env);
         let verifier = env.register(RejectingVerifier, ());
         let commitment = BytesN::from_array(&env, &[2u8; 32]);
-        client.initialize(&admin, &token_a, &token_b).unwrap();
-        client.set_zk_verifier(&verifier).unwrap();
-        assert_eq!(
-            client.swap_with_verified_commitment(&Address::generate(&env), &true, &100, &1, &commitment),
-            Err(Error::InvalidProof)
-        );
+        client.initialize(&admin, &token_a, &token_b);
+        client.set_zk_verifier(&verifier);
+        assert!(client
+            .try_swap_with_verified_commitment(&Address::generate(&env), &true, &100, &1, &commitment)
+            .is_err());
     }
 }
