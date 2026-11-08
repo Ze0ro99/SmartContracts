@@ -266,6 +266,43 @@ impl PiRcTestAsset {
         Ok(())
     }
 
+    pub fn burn_from(
+        env: Env,
+        spender: Address,
+        from: Address,
+        amount: i128,
+    ) -> Result<(), Error> {
+        spender.require_auth();
+        Self::require_initialized(&env)?;
+        if amount <= 0 {
+            return Err(Error::InvalidAmount);
+        }
+        let key = DataKey::Allowance(from.clone(), spender.clone());
+        let mut allowance: AllowanceData = env.storage().persistent().get(&key).ok_or(Error::InsufficientAllowance)?;
+        if allowance.expiration_ledger < env.ledger().sequence() {
+            return Err(Error::AllowanceExpired);
+        }
+        if allowance.amount < amount {
+            return Err(Error::InsufficientAllowance);
+        }
+        let balance = Self::balance_of(&env, &from);
+        if balance < amount {
+            return Err(Error::InsufficientBalance);
+        }
+        let supply = Self::total_supply_of(&env);
+        allowance.amount = allowance.amount.checked_sub(amount).ok_or(Error::ArithmeticError)?;
+        let next_balance = balance.checked_sub(amount).ok_or(Error::ArithmeticError)?;
+        let next_supply = supply.checked_sub(amount).ok_or(Error::ArithmeticError)?;
+        env.storage().persistent().set(&key, &allowance);
+        Self::set_balance(&env, &from, next_balance);
+        env.storage().instance().set(&DataKey::TotalSupply, &next_supply);
+        env.events().publish(
+            (symbol_short!("asset"), symbol_short!("burn")),
+            (from, amount, next_supply),
+        );
+        Ok(())
+    }
+
     pub fn balance(env: Env, id: Address) -> i128 {
         Self::balance_of(&env, &id)
     }
@@ -347,6 +384,10 @@ mod test {
         client.approve(&alice, &spender, &250, &(env.ledger().sequence() + 10));
         client.transfer_from(&spender, &alice, &bob, &100);
         assert_eq!(client.allowance(&alice, &spender), 150);
+        client.burn_from(&spender, &alice, &25);
+        assert_eq!(client.allowance(&alice, &spender), 125);
+        assert_eq!(client.balance(&alice), 375);
+        assert_eq!(client.total_supply(), 375);
 
         env.ledger().set_sequence_number(env.ledger().sequence() + 11);
         assert_eq!(client.allowance(&alice, &spender), 0);
