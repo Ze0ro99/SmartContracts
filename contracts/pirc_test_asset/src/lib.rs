@@ -387,7 +387,8 @@ mod test {
         client.burn_from(&spender, &alice, &25);
         assert_eq!(client.allowance(&alice, &spender), 125);
         assert_eq!(client.balance(&alice), 375);
-        assert_eq!(client.total_supply(), 375);
+        // 500 minted - 25 delegated burn; the 100 transfer does not change supply.
+        assert_eq!(client.total_supply(), 475);
 
         env.ledger().set_sequence_number(env.ledger().sequence() + 11);
         assert_eq!(client.allowance(&alice, &spender), 0);
