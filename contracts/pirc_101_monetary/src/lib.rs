@@ -399,6 +399,6 @@ mod test {
             &1,
             &digest,
         );
-        assert!(matches!(result, Ok(Err(Error::InvalidMetrics))));
+        assert!(matches!(result, Err(Ok(Error::InvalidMetrics))));
     }
 }
