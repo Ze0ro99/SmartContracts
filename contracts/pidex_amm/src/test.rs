@@ -1,0 +1,120 @@
+use super::*;
+use soroban_sdk::{
+    testutils::Address as _,
+    token::StellarAssetClient,
+    Address, Env,
+};
+
+fn setup_pool() -> (Env, PidexAmmClient<'static>, Address, Address, Address, Address) {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let trader = Address::generate(&env);
+    let token_a = env.register_stellar_asset_contract_v2(admin.clone());
+    let token_b = env.register_stellar_asset_contract_v2(admin.clone());
+    let token_a_id = token_a.address();
+    let token_b_id = token_b.address();
+
+    let token_a_admin = StellarAssetClient::new(&env, &token_a_id);
+    let token_b_admin = StellarAssetClient::new(&env, &token_b_id);
+    token_a_admin.mint(&trader, &20_000);
+    token_b_admin.mint(&trader, &40_000);
+
+    let contract_id = env.register(PidexAmm, ());
+    let client = PidexAmmClient::new(&env, &contract_id);
+    client.initialize(&admin, &token_a_id, &token_b_id);
+
+    // The generated client borrows Env. This helper is intentionally avoided
+    // in tests that need to return the client; use inline setup below instead.
+    (env, client, admin, trader, token_a_id, token_b_id)
+}
+
+#[test]
+fn initializes_deposits_swaps_and_withdraws_with_checked_reserves() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let trader = Address::generate(&env);
+    let token_a = env.register_stellar_asset_contract_v2(admin.clone());
+    let token_b = env.register_stellar_asset_contract_v2(admin.clone());
+    let token_a_id = token_a.address();
+    let token_b_id = token_b.address();
+    let token_a_admin = StellarAssetClient::new(&env, &token_a_id);
+    let token_b_admin = StellarAssetClient::new(&env, &token_b_id);
+    token_a_admin.mint(&trader, &20_000);
+    token_b_admin.mint(&trader, &40_000);
+
+    let contract_id = env.register(PidexAmm, ());
+    let client = PidexAmmClient::new(&env, &contract_id);
+    client.initialize(&admin, &token_a_id, &token_b_id);
+
+    let shares = client.deposit(&trader, &10_000, &20_000);
+    assert!(shares > 0);
+    let (reserve_a, reserve_b, total_shares) = client.get_reserves();
+    assert_eq!(reserve_a, 10_000);
+    assert_eq!(reserve_b, 20_000);
+    assert_eq!(total_shares, shares);
+    assert_eq!(client.shares_of(&trader), shares);
+
+    let amount_out = client.swap(&trader, &true, &1_000, &1_800);
+    assert!(amount_out >= 1_800);
+    let (reserve_a_after, reserve_b_after, _) = client.get_reserves();
+    assert_eq!(reserve_a_after, 11_000);
+    assert!(reserve_b_after < reserve_b);
+    assert!(reserve_a_after * reserve_b_after >= reserve_a * reserve_b);
+
+    let (withdraw_a, withdraw_b) = client.withdraw(&trader, &shares);
+    assert!(withdraw_a > 0);
+    assert!(withdraw_b > 0);
+    let (remaining_a, remaining_b, remaining_shares) = client.get_reserves();
+    assert_eq!(remaining_a, 0);
+    assert_eq!(remaining_b, 0);
+    assert_eq!(remaining_shares, 0);
+}
+
+#[test]
+fn rejects_slippage_and_blocks_operations_while_paused() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let trader = Address::generate(&env);
+    let token_a = env.register_stellar_asset_contract_v2(admin.clone());
+    let token_b = env.register_stellar_asset_contract_v2(admin.clone());
+    let token_a_id = token_a.address();
+    let token_b_id = token_b.address();
+    StellarAssetClient::new(&env, &token_a_id).mint(&trader, &20_000);
+    StellarAssetClient::new(&env, &token_b_id).mint(&trader, &40_000);
+
+    let contract_id = env.register(PidexAmm, ());
+    let client = PidexAmmClient::new(&env, &contract_id);
+    client.initialize(&admin, &token_a_id, &token_b_id);
+    client.deposit(&trader, &10_000, &20_000);
+
+    assert_eq!(
+        client.try_swap(&trader, &true, &1_000, &19_000),
+        Err(Ok(Error::SlippageExceeded)),
+    );
+
+    client.pause(&admin, &true);
+    assert_eq!(
+        client.try_swap(&trader, &true, &100, &1),
+        Err(Ok(Error::Paused)),
+    );
+    assert_eq!(
+        client.try_deposit(&trader, &100, &200),
+        Err(Ok(Error::Paused)),
+    );
+    assert_eq!(
+        client.try_withdraw(&trader, &1),
+        Err(Ok(Error::Paused)),
+    );
+
+    let other = Address::generate(&env);
+    assert_eq!(
+        client.try_pause(&other, &false),
+        Err(Ok(Error::Unauthorized)),
+    );
+}
