@@ -402,3 +402,6 @@ mod test {
             .is_err());
     }
 }
+
+#[cfg(test)]
+mod test;
