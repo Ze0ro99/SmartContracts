@@ -9,6 +9,8 @@ on:
       - 'contracts/pirc_225_por_v2/**'
       - 'contracts/pirc_237_ai_oracle/**'
       - 'contracts/ousd_test_token/**'
+      - 'contracts/pidex_amm/**'
+      - 'contracts/pirc_test_asset/**'
       - 'Cargo.toml'
       - 'Cargo.lock'
       - '.github/workflows/pirc-reference-contracts.yml'
@@ -31,6 +33,6 @@ jobs:
       - name: Formatting baseline notice
         run: echo "Reference crates contain pre-existing rustfmt drift; formatting is tracked separately while compile and test gates remain mandatory."
       - name: Test reference crates
-        run: cargo test -p pirc-207-registry-v3 -p pirc-214-oracle-v2 -p pirc-214-oracle-quorum-v3 -p pirc-225-por-v2 -p pirc-237-ai-oracle -p ousd-test-token
+        run: cargo test -p pirc-207-registry-v3 -p pirc-214-oracle-v2 -p pirc-214-oracle-quorum-v3 -p pirc-225-por-v2 -p pirc-237-ai-oracle -p ousd-test-token -p pidex_amm -p pirc-test-asset
       - name: Build Soroban WASM artifacts
         run: cargo build --release --target wasm32-unknown-unknown -p pirc-207-registry-v3 -p pirc-214-oracle-v2 -p pirc-214-oracle-quorum-v3 -p pirc-225-por-v2 -p pirc-237-ai-oracle -p ousd-test-token
