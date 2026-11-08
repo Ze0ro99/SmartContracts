@@ -123,5 +123,13 @@
     "usd_peg": false,
     "reserves_or_redemption": false,
     "mainnet_reuse_prohibited": true
+  },
+  "source_registry_import": {
+    "file": "deployments/testnet1/pirc-packet-registry-source.json",
+    "status": "SOURCE_DECLARED_NOT_CHAIN_VERIFIED",
+    "issuer_account": "GA3ECRFJ6SO5BW6NEIKW3ACJXNG5UNBTLRRXWC742NHUEDV6KL3RNEN6",
+    "layer_contract_references": 7,
+    "verified_contract_instances": 0,
+    "mapping_policy": "Do not map GOLD to INDIGO or overwrite the canonical seven asset slots without an approved migration."
   }
 }
