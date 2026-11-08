@@ -2,6 +2,7 @@
   "processed": [
     "economic_settlement",
     "ousd_test_token",
+    "pidex_amm",
     "pirc_1",
     "pirc_10",
     "pirc_100",
@@ -112,7 +113,8 @@
     "pirc_9",
     "pirc_99",
     "pirc_economic_settlement",
+    "pirc_test_asset",
     "subscription"
   ],
-  "last_run": "2026-11-08T10:54:57Z"
+  "last_run": "2026-11-08T15:10:07Z"
 }
