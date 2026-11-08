@@ -35,7 +35,6 @@ fn setup_period(env: &Env, client: &EconomicSettlementClient, period_id: BytesN<
     let distributable = client.propose_period(&operator, &proposal(env, period_id, id(env, 2), [1_000, 200, 100, 100, 50, 50], 1, id(env, 3)));
     (admin, operator, distributable)
 }
-}
 
 #[test]
 fn settles_only_after_exact_conservation() {
