@@ -58,7 +58,7 @@ fn settles_only_after_exact_conservation() {
     client.try_settle_period(&operator, &period_id, &id(&env, 6))
     .unwrap().unwrap();
 
-    let period = client.get_period(&period_id).unwrap();
+    let period = client.get_period(&period_id);
     assert_eq!(period.status, PeriodStatus::Settled);
     assert_eq!(period.allocated, period.distributable);
     assert_eq!(
@@ -104,7 +104,7 @@ fn rejects_zero_allocation_and_duplicate_participant() {
         client.try_record_allocation(&operator, &period_id, &participant, &1, &id(&env, 14)),
         Err(Ok(Error::DuplicateAllocation))
     );
-    let period = client.get_period(&period_id).unwrap();
+    let period = client.get_period(&period_id);
     assert_eq!(period.allocated, 400, "duplicate attempt must not mutate period totals");
     assert_eq!(
         client.get_allocation(&period_id, &participant).unwrap().0,
@@ -129,7 +129,7 @@ fn rejects_allocation_above_remaining_budget() {
         client.try_record_allocation(&operator, &period_id, &participant_b, &2, &id(&env, 17)),
         Err(Ok(Error::AllocationExceedsDistributable))
     );
-    let period = client.get_period(&period_id).unwrap();
+    let period = client.get_period(&period_id);
     assert_eq!(period.allocated, 499, "rejected allocation must not mutate period totals");
     assert!(client.get_allocation(&period_id, &participant_b).is_none());
 }
@@ -249,7 +249,7 @@ fn zero_distributable_period_can_settle_without_allocations() {
     client.try_settle_period(&operator, &period_id, &id(&env, 40))
         .unwrap().unwrap();
 
-    let period = client.get_period(&period_id).unwrap();
+    let period = client.get_period(&period_id);
     assert_eq!(period.status, PeriodStatus::Settled);
     assert_eq!(period.allocated, 0);
     assert_eq!(period.distributable, 0);
@@ -271,13 +271,13 @@ fn allocation_sum_overflow_is_rejected_without_state_mutation() {
     .unwrap().unwrap();
     client.approve_period(&period_id.clone());
 
-    client.try_record_allocation(&operator, &period_id, &Address::generate(&env), &i128::MAX - 1, &id(&env, 44))
+    client.try_record_allocation(&operator, &period_id, &Address::generate(&env), &(i128::MAX - 1), &id(&env, 44))
     .unwrap().unwrap();
     assert_eq!(
         client.try_record_allocation(&operator, &period_id, &Address::generate(&env), &2, &id(&env, 45)),
         Err(Ok(Error::ArithmeticOverflow))
     );
-    let period = client.get_period(&period_id).unwrap();
+    let period = client.get_period(&period_id);
     assert_eq!(period.allocated, i128::MAX - 1);
 }
 
