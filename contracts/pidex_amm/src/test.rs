@@ -5,31 +5,6 @@ use soroban_sdk::{
     Address, Env,
 };
 
-fn setup_pool() -> (Env, PidexAmmClient<'static>, Address, Address, Address, Address) {
-    let env = Env::default();
-    env.mock_all_auths();
-
-    let admin = Address::generate(&env);
-    let trader = Address::generate(&env);
-    let token_a = env.register_stellar_asset_contract_v2(admin.clone());
-    let token_b = env.register_stellar_asset_contract_v2(admin.clone());
-    let token_a_id = token_a.address();
-    let token_b_id = token_b.address();
-
-    let token_a_admin = StellarAssetClient::new(&env, &token_a_id);
-    let token_b_admin = StellarAssetClient::new(&env, &token_b_id);
-    token_a_admin.mint(&trader, &20_000);
-    token_b_admin.mint(&trader, &40_000);
-
-    let contract_id = env.register(PidexAmm, ());
-    let client = PidexAmmClient::new(&env, &contract_id);
-    client.initialize(&admin, &token_a_id, &token_b_id);
-
-    // The generated client borrows Env. This helper is intentionally avoided
-    // in tests that need to return the client; use inline setup below instead.
-    (env, client, admin, trader, token_a_id, token_b_id)
-}
-
 #[test]
 fn initializes_deposits_swaps_and_withdraws_with_checked_reserves() {
     let env = Env::default();
