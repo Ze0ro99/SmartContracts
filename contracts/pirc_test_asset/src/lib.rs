@@ -340,7 +340,8 @@ mod test {
 
     #[test]
     fn allowance_is_consumed_and_expires() {
-        let (env, _id, admin, alice, bob, client) = setup();
+        let (env, id, admin, alice, bob) = setup();
+        let client = PiRcTestAssetClient::new(&env, &id);
         let spender = Address::generate(&env);
         client.mint(&admin, &alice, &500);
         client.approve(&alice, &spender, &250, &(env.ledger().sequence() + 10));
