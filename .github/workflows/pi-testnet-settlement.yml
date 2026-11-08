@@ -31,13 +31,13 @@ jobs:
           targets: wasm32-unknown-unknown
 
       - name: Format check
-        run: cargo fmt --manifest-path contracts/economic_settlement/Cargo.toml -- --check
+        run: cargo fmt --manifest-path contracts/pirc_economic_settlement/Cargo.toml -- --check
 
       - name: Unit tests
-        run: cargo test --manifest-path contracts/economic_settlement/Cargo.toml -- --nocapture
+        run: cargo test --manifest-path contracts/pirc_economic_settlement/Cargo.toml -- --nocapture
 
       - name: Build settlement WASM
-        run: cargo build --manifest-path contracts/economic_settlement/Cargo.toml --target wasm32-unknown-unknown --release
+        run: cargo build --manifest-path contracts/pirc_economic_settlement/Cargo.toml --target wasm32-unknown-unknown --release
 
       - uses: actions/upload-artifact@v4
         with:
@@ -166,14 +166,11 @@ jobs:
           PARTICIPANT=$(stellar keys address pi-test-participant)
           OVERFLOW_PARTICIPANT=$(stellar keys address pi-test-overflow-participant)
 
+          PROPOSAL="{\"period_id\":\"$PERIOD_ID\",\"asset_id\":\"$ASSET_ID\",\"collected_revenue\":1000,\"operating_costs\":100,\"tax_and_statutory\":50,\"refunds_and_due_liabilities\":0,\"reserve_replenishment\":0,\"approved_commitments\":0,\"policy_version\":1,\"input_digest\":\"$INPUT_DIGEST\"}"
+
           stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source-account pi-deployer --network pi-testnet --send=yes -- propose_period \
             --operator "$PI_TESTNET_DEPLOYER" \
-            --period_id "$PERIOD_ID" \
-            --asset_id "$ASSET_ID" \
-            --collected_revenue 1000 \
-            --deductions 150 \
-            --policy_version 1 \
-            --input_digest "$INPUT_DIGEST"
+            --proposal "$PROPOSAL"
 
           stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source-account pi-deployer --network pi-testnet --send=yes -- approve_period --period_id "$PERIOD_ID"
 
@@ -181,12 +178,12 @@ jobs:
             --operator "$PI_TESTNET_DEPLOYER" --period_id "$PERIOD_ID" \
             --participant "$PARTICIPANT" --amount 850 --evidence_hash "$EVIDENCE_HASH"
 
-          expect_contract_error 9 "Duplicate allocation" \
+          expect_contract_error 8 "Duplicate allocation" \
             stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source-account pi-deployer --network pi-testnet --send=no -- record_allocation \
             --operator "$PI_TESTNET_DEPLOYER" --period_id "$PERIOD_ID" \
             --participant "$PARTICIPANT" --amount 1 --evidence_hash "$EVIDENCE_HASH"
 
-          expect_contract_error 10 "Over-allocation" \
+          expect_contract_error 9 "Over-allocation" \
             stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source-account pi-deployer --network pi-testnet --send=no -- record_allocation \
             --operator "$PI_TESTNET_DEPLOYER" --period_id "$PERIOD_ID" \
             --participant "$OVERFLOW_PARTICIPANT" --amount 1 --evidence_hash "$EVIDENCE_HASH"
@@ -194,7 +191,7 @@ jobs:
           stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source-account pi-deployer --network pi-testnet --send=yes -- settle_period \
             --operator "$PI_TESTNET_DEPLOYER" --period_id "$PERIOD_ID" --settlement_digest "$SETTLEMENT_DIGEST"
 
-          expect_contract_error 12 "Double settlement" \
+          expect_contract_error 11 "Double settlement" \
             stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source-account pi-deployer --network pi-testnet --send=no -- settle_period \
             --operator "$PI_TESTNET_DEPLOYER" --period_id "$PERIOD_ID" --settlement_digest "$SETTLEMENT_DIGEST"
 
@@ -210,10 +207,9 @@ jobs:
 
           NEXT_PERIOD=$(printf 'pirc-revoked-operator-%s' "$GITHUB_RUN_ID" | sha256sum | cut -d' ' -f1)
           expect_contract_error 3 "Revoked operator" \
+            NEXT_PROPOSAL="{\"period_id\":\"$NEXT_PERIOD\",\"asset_id\":\"$ASSET_ID\",\"collected_revenue\":1000,\"operating_costs\":100,\"tax_and_statutory\":50,\"refunds_and_due_liabilities\":0,\"reserve_replenishment\":0,\"approved_commitments\":0,\"policy_version\":1,\"input_digest\":\"$INPUT_DIGEST\"}"
             stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source-account pi-deployer --network pi-testnet --send=no -- propose_period \
-            --operator "$PI_TESTNET_DEPLOYER" --period_id "$NEXT_PERIOD" --asset_id "$ASSET_ID" \
-            --collected_revenue 1000 --deductions 150 \
-            --policy_version 1 --input_digest "$INPUT_DIGEST"
+            --operator "$PI_TESTNET_DEPLOYER" --proposal "$NEXT_PROPOSAL"
 
           {
             echo "- Period ID: $PERIOD_ID"
