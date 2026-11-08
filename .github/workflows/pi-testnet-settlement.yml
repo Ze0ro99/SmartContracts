@@ -166,18 +166,11 @@ jobs:
           PARTICIPANT=$(stellar keys address pi-test-participant)
           OVERFLOW_PARTICIPANT=$(stellar keys address pi-test-overflow-participant)
 
+          PROPOSAL="{\"period_id\":\"$PERIOD_ID\",\"asset_id\":\"$ASSET_ID\",\"collected_revenue\":1000,\"operating_costs\":100,\"tax_and_statutory\":50,\"refunds_and_due_liabilities\":0,\"reserve_replenishment\":0,\"approved_commitments\":0,\"policy_version\":1,\"input_digest\":\"$INPUT_DIGEST\"}"
+
           stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source-account pi-deployer --network pi-testnet --send=yes -- propose_period \
             --operator "$PI_TESTNET_DEPLOYER" \
-            --period_id "$PERIOD_ID" \
-            --asset_id "$ASSET_ID" \
-            --collected_revenue 1000 \
-            --operating_costs 100 \
-            --tax_and_statutory 50 \
-            --refunds_and_due_liabilities 0 \
-            --reserve_replenishment 0 \
-            --approved_commitments 0 \
-            --policy_version 1 \
-            --input_digest "$INPUT_DIGEST"
+            --proposal "$PROPOSAL"
 
           stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source-account pi-deployer --network pi-testnet --send=yes -- approve_period --period_id "$PERIOD_ID"
 
@@ -214,11 +207,9 @@ jobs:
 
           NEXT_PERIOD=$(printf 'pirc-revoked-operator-%s' "$GITHUB_RUN_ID" | sha256sum | cut -d' ' -f1)
           expect_contract_error 3 "Revoked operator" \
+            NEXT_PROPOSAL="{\"period_id\":\"$NEXT_PERIOD\",\"asset_id\":\"$ASSET_ID\",\"collected_revenue\":1000,\"operating_costs\":100,\"tax_and_statutory\":50,\"refunds_and_due_liabilities\":0,\"reserve_replenishment\":0,\"approved_commitments\":0,\"policy_version\":1,\"input_digest\":\"$INPUT_DIGEST\"}"
             stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source-account pi-deployer --network pi-testnet --send=no -- propose_period \
-            --operator "$PI_TESTNET_DEPLOYER" --period_id "$NEXT_PERIOD" --asset_id "$ASSET_ID" \
-            --collected_revenue 1000 --operating_costs 100 --tax_and_statutory 50 \
-            --refunds_and_due_liabilities 0 --reserve_replenishment 0 --approved_commitments 0 \
-            --policy_version 1 --input_digest "$INPUT_DIGEST"
+            --operator "$PI_TESTNET_DEPLOYER" --proposal "$NEXT_PROPOSAL"
 
           {
             echo "- Period ID: $PERIOD_ID"
