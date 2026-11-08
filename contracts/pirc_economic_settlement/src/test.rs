@@ -84,7 +84,7 @@ fn rejects_underfunded_period() {
     let env = Env::default();
     env.mock_all_auths();
     let contract_id = env.register(EconomicSettlement, ());
-    env.clone().as_contract(&contract_id, || {env.mock_all_auths();
+    env.clone().as_contract(&contract_id, || {
     let admin = Address::generate(&env);
     let operator = Address::generate(&env);
     EconomicSettlement::initialize(env.clone(), admin).unwrap();
@@ -164,7 +164,7 @@ fn rejects_zero_policy_version() {
     let env = Env::default();
     env.mock_all_auths();
     let contract_id = env.register(EconomicSettlement, ());
-    env.clone().as_contract(&contract_id, || {env.mock_all_auths();
+    env.clone().as_contract(&contract_id, || {
     let admin = Address::generate(&env);
     let operator = Address::generate(&env);
     EconomicSettlement::initialize(env.clone(), admin).unwrap();
@@ -186,7 +186,7 @@ fn rejects_negative_revenue_and_negative_deductions() {
     let env = Env::default();
     env.mock_all_auths();
     let contract_id = env.register(EconomicSettlement, ());
-    env.clone().as_contract(&contract_id, || {env.mock_all_auths();
+    env.clone().as_contract(&contract_id, || {
     let admin = Address::generate(&env);
     let operator = Address::generate(&env);
     EconomicSettlement::initialize(env.clone(), admin).unwrap();
@@ -216,7 +216,7 @@ fn detects_deduction_sum_overflow() {
     let env = Env::default();
     env.mock_all_auths();
     let contract_id = env.register(EconomicSettlement, ());
-    env.clone().as_contract(&contract_id, || {env.mock_all_auths();
+    env.clone().as_contract(&contract_id, || {
     let admin = Address::generate(&env);
     let operator = Address::generate(&env);
     EconomicSettlement::initialize(env.clone(), admin).unwrap();
@@ -286,7 +286,7 @@ fn zero_distributable_period_can_settle_without_allocations() {
     let env = Env::default();
     env.mock_all_auths();
     let contract_id = env.register(EconomicSettlement, ());
-    env.clone().as_contract(&contract_id, || {env.mock_all_auths();
+    env.clone().as_contract(&contract_id, || {
     let admin = Address::generate(&env);
     let operator = Address::generate(&env);
     let period_id = id(&env, 37);
@@ -318,7 +318,7 @@ fn allocation_sum_overflow_is_rejected_without_state_mutation() {
     let env = Env::default();
     env.mock_all_auths();
     let contract_id = env.register(EconomicSettlement, ());
-    env.clone().as_contract(&contract_id, || {env.mock_all_auths();
+    env.clone().as_contract(&contract_id, || {
     let admin = Address::generate(&env);
     let operator = Address::generate(&env);
     let period_id = id(&env, 41);
