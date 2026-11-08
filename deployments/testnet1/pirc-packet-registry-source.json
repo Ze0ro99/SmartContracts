@@ -1,0 +1,111 @@
+{
+  "schema_version": "1.0.0",
+  "network_claim": "Pi Testnet (Stellar/Soroban)",
+  "network_id": "pi-testnet1",
+  "verification_status": "SOURCE_DECLARED_NOT_CHAIN_VERIFIED",
+  "source": {
+    "repository": "Ze0ro99/PiRC",
+    "path": "artifacts/pirc-wealth-core/public/data/full-repo/7_layer_packets.json",
+    "blob_sha": "a6ac1ef3fd145eab9e71db59964cd7e0a8cb8c9a",
+    "companion_registry_path": "artifacts/pirc-wealth-core/public/data/full-repo/CONTRACTS_REGISTRY.json",
+    "companion_registry_blob_sha": "99f068086ce8b60e05985611e34964b26e1f0987"
+  },
+  "issuer": {
+    "account_id": "GA3ECRFJ6SO5BW6NEIKW3ACJXNG5UNBTLRRXWC742NHUEDV6KL3RNEN6",
+    "strkey_type": "ed25519_public_key_account",
+    "declared_role": "PiRC Master Issuer for the seven colored Project Packets",
+    "signer_control": "NOT_VERIFIED",
+    "issuer_authorization": "NOT_VERIFIED"
+  },
+  "layers": [
+    {
+      "index": 6,
+      "color": "RED",
+      "role": "Governance",
+      "contract_id": "CC6WMAHKOPWY6HW46VNKTAV4DZZLRTTNMYLDEKCAICQGMCWV5PZYNTBO",
+      "contract_instance_readback": "NOT_VERIFIED"
+    },
+    {
+      "index": 5,
+      "color": "GREEN",
+      "role": "Pi Cash",
+      "contract_id": "CBPG33E7RUX6MGU65IMM4HXCAGLA4OZRBOUWKQSBTIZWE2RD52VGWDT4",
+      "contract_instance_readback": "NOT_VERIFIED"
+    },
+    {
+      "index": 3,
+      "color": "ORANGE",
+      "role": "Register",
+      "contract_id": "CB7T6TDSZ5B2MQI7NI4EG6ZASYPRMJ3XVUWS6BON4Z64OBMUJ4ZD6GKF",
+      "contract_instance_readback": "NOT_VERIFIED"
+    },
+    {
+      "index": 2,
+      "color": "YELLOW",
+      "role": "Subscribe",
+      "contract_id": "CANLSQUPUZYKE3S2HAIGXAHMOQWE4FVX5DS7GTL42BVKSNHLFVMQSDFF",
+      "contract_instance_readback": "NOT_VERIFIED"
+    },
+    {
+      "index": 4,
+      "color": "BLUE",
+      "role": "Extend",
+      "contract_id": "CAMSQZTSCTF3MG4UEIAWKRZNSX7LLKGKXMVBEQO2ETVPGS3CINM7JBQD",
+      "contract_instance_readback": "NOT_VERIFIED"
+    },
+    {
+      "index": 0,
+      "color": "PURPLE",
+      "role": "Pay Upfront",
+      "contract_id": "CCGEMIEAZFJSBTRL5VGJJAUGPJI3B7UQ3BTAB2OQGW73JMWLS57YVVA4",
+      "contract_instance_readback": "NOT_VERIFIED"
+    },
+    {
+      "index": 1,
+      "color": "GOLD",
+      "role": "Status",
+      "contract_id": "CD3UAUN4FU3VHPMLOZWFQWJ2UBUUBBD37SZ7WBEGJQACJ7YF6QVE2SYG",
+      "contract_instance_readback": "NOT_VERIFIED"
+    }
+  ],
+  "subscription": {
+    "contract_id": "CCUF75B6W3HRJTJD6O7OXNI72HGJ7DERZ5MUNOMFMSK23ME5GUIKPFYV",
+    "declared_role": "PiRC-2 recurring payments",
+    "contract_instance_readback": "NOT_VERIFIED"
+  },
+  "migration": {
+    "current_project_packet_colors": [
+      "RED",
+      "GREEN",
+      "ORANGE",
+      "YELLOW",
+      "BLUE",
+      "PURPLE",
+      "GOLD"
+    ],
+    "canonical_unity_colors": [
+      "RED",
+      "ORANGE",
+      "YELLOW",
+      "GREEN",
+      "BLUE",
+      "INDIGO",
+      "PURPLE"
+    ],
+    "gold_to_indigo_mapping": "NOT_APPROVED",
+    "rule": "Keep source packet identifiers separate from canonical seven-layer asset slots until a versioned migration is approved."
+  },
+  "prior_probe": {
+    "checked_at": "2026-11-08T13:45:06Z",
+    "network_identity_verified": true,
+    "registered_layer_contract_instances_found": 0,
+    "registered_layer_contract_instances_checked": 7,
+    "status": "NO_CONTRACT_INSTANCE_READBACK"
+  },
+  "safety": {
+    "deployment_enabled": false,
+    "mainnet_writes_enabled": false,
+    "do_not_infer_deployment_from_registry": true,
+    "do_not_use_issuer_public_key_as_contract_id": true
+  }
+}
