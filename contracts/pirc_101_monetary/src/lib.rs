@@ -391,7 +391,7 @@ mod test {
         let env = Env::default();
         let (client, admin) = setup(&env);
         let digest = BytesN::from_array(&env, &[9u8; 32]);
-        let result = client.apply_qwf_adjustment(
+        let result = client.try_apply_qwf_adjustment(
             &admin,
             &2_000,
             &500_000,
@@ -399,6 +399,6 @@ mod test {
             &1,
             &digest,
         );
-        assert_eq!(result, Err(Error::InvalidMetrics));
+        assert!(matches!(result, Ok(Err(Error::InvalidMetrics))));
     }
 }
