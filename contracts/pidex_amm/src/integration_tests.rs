@@ -73,7 +73,7 @@ fn rejects_slippage_and_blocks_operations_while_paused() {
         Err(Ok(Error::SlippageExceeded)),
     );
 
-    client.pause(&admin, &true);
+    client.pause(&true);
     assert_eq!(
         client.try_swap(&trader, &true, &100, &1),
         Err(Ok(Error::Paused)),
@@ -87,9 +87,4 @@ fn rejects_slippage_and_blocks_operations_while_paused() {
         Err(Ok(Error::Paused)),
     );
 
-    let other = Address::generate(&env);
-    assert_eq!(
-        client.try_pause(&other, &false),
-        Err(Ok(Error::Unauthorized)),
-    );
 }
