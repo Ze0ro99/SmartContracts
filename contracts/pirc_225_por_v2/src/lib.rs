@@ -113,9 +113,9 @@ mod test {
         let auditor = Address::generate(&env);
         let asset = BytesN::from_array(&env, &[3u8; 32]);
         let report = BytesN::from_array(&env, &[4u8; 32]);
-        client.initialize(&admin).unwrap();
-        client.set_auditor(&admin, &auditor, &true).unwrap();
-        client.record_attestation(&auditor, &asset, &1_000, &900, &7, &report).unwrap();
+        client.initialize(&admin);
+        client.set_auditor(&admin, &auditor, &true);
+        client.record_attestation(&auditor, &asset, &1_000, &900, &7, &report);
         assert_eq!(client.is_covered(&asset), Some(true));
     }
 }

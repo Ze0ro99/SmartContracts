@@ -845,6 +845,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
+name = "ousd-test-token"
+version = "0.1.0"
+dependencies = [
+ "soroban-sdk",
+]
+
+[[package]]
 name = "p256"
 version = "0.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1108,6 +1115,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "pirc-207-registry-v3"
+version = "0.1.0"
+dependencies = [
+ "soroban-sdk",
+]
+
+[[package]]
 name = "pirc-208"
 version = "0.1.0"
 dependencies = [
@@ -1151,6 +1165,20 @@ dependencies = [
 
 [[package]]
 name = "pirc-214"
+version = "0.1.0"
+dependencies = [
+ "soroban-sdk",
+]
+
+[[package]]
+name = "pirc-214-oracle-quorum-v3"
+version = "0.1.0"
+dependencies = [
+ "soroban-sdk",
+]
+
+[[package]]
+name = "pirc-214-oracle-v2"
 version = "0.1.0"
 dependencies = [
  "soroban-sdk",
@@ -1228,6 +1256,13 @@ dependencies = [
 
 [[package]]
 name = "pirc-225"
+version = "0.1.0"
+dependencies = [
+ "soroban-sdk",
+]
+
+[[package]]
+name = "pirc-225-por-v2"
 version = "0.1.0"
 dependencies = [
  "soroban-sdk",
@@ -1312,6 +1347,13 @@ dependencies = [
 
 [[package]]
 name = "pirc-237"
+version = "0.1.0"
+dependencies = [
+ "soroban-sdk",
+]
+
+[[package]]
+name = "pirc-237-ai-oracle"
 version = "0.1.0"
 dependencies = [
  "soroban-sdk",
@@ -1585,6 +1627,13 @@ dependencies = [
 
 [[package]]
 name = "pirc-99"
+version = "0.1.0"
+dependencies = [
+ "soroban-sdk",
+]
+
+[[package]]
+name = "pirc-economic-settlement"
 version = "0.1.0"
 dependencies = [
  "soroban-sdk",

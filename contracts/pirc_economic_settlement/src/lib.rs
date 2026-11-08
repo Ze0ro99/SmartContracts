@@ -54,6 +54,22 @@ enum DataKey {
     Allocation(BytesN<32>, Address),
 }
 
+/// Grouped period inputs keep the Soroban entry point within the host ABI parameter limit.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PeriodProposal {
+    pub period_id: BytesN<32>,
+    pub asset_id: BytesN<32>,
+    pub collected_revenue: i128,
+    pub operating_costs: i128,
+    pub tax_and_statutory: i128,
+    pub refunds_and_due_liabilities: i128,
+    pub reserve_replenishment: i128,
+    pub approved_commitments: i128,
+    pub policy_version: u32,
+    pub input_digest: BytesN<32>,
+}
+
 #[contract]
 pub struct EconomicSettlement;
 
@@ -98,18 +114,21 @@ impl EconomicSettlement {
     pub fn propose_period(
         env: Env,
         operator: Address,
-        period_id: BytesN<32>,
-        asset_id: BytesN<32>,
-        collected_revenue: i128,
-        operating_costs: i128,
-        tax_and_statutory: i128,
-        refunds_and_due_liabilities: i128,
-        reserve_replenishment: i128,
-        approved_commitments: i128,
-        policy_version: u32,
-        input_digest: BytesN<32>,
+        proposal: PeriodProposal,
     ) -> Result<i128, Error> {
         Self::require_operator(&env, &operator)?;
+        let PeriodProposal {
+            period_id,
+            asset_id,
+            collected_revenue,
+            operating_costs,
+            tax_and_statutory,
+            refunds_and_due_liabilities,
+            reserve_replenishment,
+            approved_commitments,
+            policy_version,
+            input_digest,
+        } = proposal;
         if env.storage().persistent().has(&DataKey::Period(period_id.clone())) {
             return Err(Error::PeriodAlreadyExists);
         }
