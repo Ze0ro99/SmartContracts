@@ -2,7 +2,7 @@
 name = "pidex_amm"
 version = "1.0.0"
 edition = "2021"
-license = "PiOS"
+license-file = "../../LICENSE"
 description = "PiDEX constant-product AMM reference contract"
 
 [lib]
