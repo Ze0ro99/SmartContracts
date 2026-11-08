@@ -206,8 +206,8 @@ jobs:
           stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source-account pi-deployer --network pi-testnet --send=yes -- set_operator --operator "$PI_TESTNET_DEPLOYER" --enabled false
 
           NEXT_PERIOD=$(printf 'pirc-revoked-operator-%s' "$GITHUB_RUN_ID" | sha256sum | cut -d' ' -f1)
+          NEXT_PROPOSAL="{\"period_id\":\"$NEXT_PERIOD\",\"asset_id\":\"$ASSET_ID\",\"collected_revenue\":1000,\"operating_costs\":100,\"tax_and_statutory\":50,\"refunds_and_due_liabilities\":0,\"reserve_replenishment\":0,\"approved_commitments\":0,\"policy_version\":1,\"input_digest\":\"$INPUT_DIGEST\"}"
           expect_contract_error 3 "Revoked operator" \
-            NEXT_PROPOSAL="{\"period_id\":\"$NEXT_PERIOD\",\"asset_id\":\"$ASSET_ID\",\"collected_revenue\":1000,\"operating_costs\":100,\"tax_and_statutory\":50,\"refunds_and_due_liabilities\":0,\"reserve_replenishment\":0,\"approved_commitments\":0,\"policy_version\":1,\"input_digest\":\"$INPUT_DIGEST\"}"
             stellar contract invoke --id "$PI_TESTNET_CONTRACT_ID" --source-account pi-deployer --network pi-testnet --send=no -- propose_period \
             --operator "$PI_TESTNET_DEPLOYER" --proposal "$NEXT_PROPOSAL"
 
