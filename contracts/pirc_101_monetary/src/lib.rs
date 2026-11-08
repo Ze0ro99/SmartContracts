@@ -331,7 +331,7 @@ mod test {
             &String::from_str(env, "NANO_USD_PER_PI"),
             &10_072_123,
             &1_000_000,
-            &100_000_000,
+            &11_000_000,
             &120,
         );
         (client, admin)
@@ -382,7 +382,7 @@ mod test {
             &1,
             &digest,
         );
-        assert_eq!(qwf, 11_079_335);
+        assert_eq!(qwf, 11_000_000);
     }
 
     #[test]
