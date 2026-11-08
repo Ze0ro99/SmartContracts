@@ -1,0 +1,24 @@
+[package]
+name = "pidex_amm"
+version = "1.0.0"
+edition = "2021"
+license = "PiOS"
+description = "PiDEX constant-product AMM reference contract"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+soroban-sdk = { workspace = true }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
+
+[profile.release]
+opt-level = "z"
+overflow-checks = true
+debug = false
+strip = "symbols"
+panic = "abort"
+codegen-units = 1
+lto = true
