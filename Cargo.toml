@@ -3,6 +3,9 @@ resolver = "2"
 members = [
   "contracts/*",
 ]
+exclude = [
+  "contracts/economic_settlement",
+]
 
 [workspace.dependencies]
 soroban-sdk = "22.0.11"
@@ -20,4 +23,3 @@ lto = true
 # For more information about this profile see https://soroban.stellar.org/docs/basic-tutorials/logging#cargotoml-profile
 [profile.release-with-logs]
 inherits = "release"
-debug-assertions = true
