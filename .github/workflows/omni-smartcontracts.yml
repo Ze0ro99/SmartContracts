@@ -64,9 +64,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Import PiRC repository (authenticated via OMNI_SYNC_TOKEN)
+      - name: Import public PiRC repository (read-only)
         id: import-pirc
-        continue-on-error: true
         uses: actions/checkout@v4
         with:
           repository: Ze0ro99/PiRC
@@ -509,8 +508,8 @@ jobs:
   # =========================================================
   # 5. Sync results back to PiRC (main branch only)
   # =========================================================
-  sync-to-pirc:
-    name: Sync Registry → PiRC
+  prepare-pirc-sync-evidence:
+    name: Prepare PiRC Sync Evidence (no automatic push)
     needs: [build-test-audit, testnet-verify]
     if: >
       always() &&
@@ -519,39 +518,39 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Checkout PiRC
-        continue-on-error: true
-        uses: actions/checkout@v4
-        with:
-          repository: Ze0ro99/PiRC
-          token: ${{ secrets.OMNI_SYNC_TOKEN }}
-          path: pirc
-
-      - name: Download all reports
+      - name: Download contract reports
         continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           path: all-reports/
 
-      - name: Push updated registry to PiRC
-        continue-on-error: true
+      - name: Create reviewable PiRC sync manifest
         env:
           RUN_ID: ${{ github.run_id }}
           SHA: ${{ github.sha }}
+          BUILD_RESULT: ${{ needs.build-test-audit.result }}
+          TESTNET_PREFLIGHT_RESULT: ${{ needs.testnet-verify.result }}
         run: |
           set -euo pipefail
-          [ -d pirc ] || { echo "PiRC unavailable — skipping sync."; exit 0; }
-          cd pirc
-          mkdir -p smartcontracts-sync
-          cp -r ../all-reports/* smartcontracts-sync/ 2>/dev/null || true
-          jq -n --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg run "$RUN_ID" --arg sha "$SHA" \
-            '{source:"SmartContracts", run_id:$run, commit:$sha, synced_at:$ts, status:"success"}' \
-            > smartcontracts-sync/LAST_SYNC.json
-          git config user.name  "omni-sync-bot"
-          git config user.email "omni-sync-bot@users.noreply.github.com"
-          git add smartcontracts-sync/
-          git diff --cached --quiet || git commit -m "chore(sync): SmartContracts pipeline run $RUN_ID"
-          git push || echo "Push skipped (no permission or no changes)."
+          mkdir -p pirc-sync-evidence
+          jq -n \
+            --arg source "SmartContracts" \
+            --arg run_id "$RUN_ID" \
+            --arg commit "$SHA" \
+            --arg generated_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg build "$BUILD_RESULT" \
+            --arg testnet_preflight "$TESTNET_PREFLIGHT_RESULT" \
+            '{source:$source,run_id:$run_id,commit:$commit,generated_at:$generated_at,build_test_audit:$build,testnet_preflight:$testnet_preflight,automatic_cross_repository_push:false,review_required:true}' \
+            > pirc-sync-evidence/LAST_SYNC.json
+          cp -r all-reports/. pirc-sync-evidence/reports/ 2>/dev/null || true
+
+      - name: Upload reviewable PiRC sync evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: pirc-sync-evidence
+          path: pirc-sync-evidence/
+          retention-days: ${{ env.ARTIFACTS_RETENTION_DAYS }}
+          if-no-files-found: error
 
   # =========================================================
   # 6. Master Summary
