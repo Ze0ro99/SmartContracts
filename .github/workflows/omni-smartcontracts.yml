@@ -28,7 +28,7 @@ on:
         required: false
         default: ''
       deploy_testnet:
-        description: 'Deploy and verify contracts on Stellar Testnet'
+        description: 'Run Pi Testnet preflight only; no signing or deployment'
         required: false
         type: boolean
         default: false
@@ -64,52 +64,37 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Import PiRC repository (authenticated via OMNI_SYNC_TOKEN)
+      - name: Import public PiRC repository (read-only)
         id: import-pirc
-        continue-on-error: true
         uses: actions/checkout@v4
         with:
           repository: Ze0ro99/PiRC
-          token: ${{ secrets.OMNI_SYNC_TOKEN }}
           path: pirc-import
           fetch-depth: 1
 
-      - name: Prepare PiRC assets (import or generate fallback)
+      - name: Import canonical PiRC schemas and registry (fail closed)
         env:
           RUN_ID: ${{ github.run_id }}
         run: |
           set -euo pipefail
-          mkdir -p imported/pirc/{schemas,registries,manifests}
-
-          if [ -d "pirc-import" ]; then
-            echo "→ Importing assets from PiRC..."
-            cp -r pirc-import/schemas/.  imported/pirc/schemas/    2>/dev/null || true
-            cp    pirc-import/*.json     imported/pirc/registries/ 2>/dev/null || true
-            cp    pirc-import/sovereign_manifest.json imported/pirc/manifests/ 2>/dev/null || true
-          else
-            echo "→ PiRC unavailable — generating fallback assets."
-          fi
-
-          TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-
-          [ -f imported/pirc/registries/CONTRACTS_REGISTRY.json ] || \
-            jq -n --arg ts "$TS" --arg run "$RUN_ID" \
-              '{contracts: [], version: "fallback-1.0", generated_at: $ts, run_id: $run}' \
-              > imported/pirc/registries/CONTRACTS_REGISTRY.json
-
-          [ -f imported/pirc/manifests/sovereign_manifest.json ] || \
-            jq -n --arg ts "$TS" \
-              '{name: "Sovereign Fallback Manifest", version: "1.0-fallback",
-                generated_at: $ts, source: "OMNI SmartContracts Pipeline",
-                layers: ["Core","Identity","Subscriptions","RWA","DeFi"]}' \
-              > imported/pirc/manifests/sovereign_manifest.json
-
-          [ -n "$(ls -A imported/pirc/schemas 2>/dev/null)" ] || \
-            echo '{"$schema":"[json-schema.org](http://json-schema.org/draft-07/schema#)","title":"Fallback Schema","type":"object"}' \
-              > imported/pirc/schemas/fallback-schema.json
-
-          echo "Assets ready:" && find imported -type f
-
+          test -d pirc-import/schemas/v1
+          test -s pirc-import/registries/seven-layer-registry.v1.json
+          mkdir -p imported/pirc/schemas/v1 imported/pirc/registries
+          cp pirc-import/schemas/v1/*.json imported/pirc/schemas/v1/
+          cp pirc-import/registries/seven-layer-registry.v1.json imported/pirc/registries/
+          schema_count="$(find imported/pirc/schemas/v1 -maxdepth 1 -type f -name '*.json' | wc -l)"
+          test "$schema_count" -gt 0
+          jq -n \
+            --arg repository "Ze0ro99/PiRC" \
+            --arg source_sha "$(git -C pirc-import rev-parse HEAD)" \
+            --arg run_id "$RUN_ID" \
+            --arg imported_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg registry "registries/seven-layer-registry.v1.json" \
+            --argjson schema_count "$schema_count" \
+            '{source_repository:$repository,source_commit:$source_sha,run_id:$run_id,imported_at:$imported_at,registry:$registry,schema_count:$schema_count,mode:"SOURCE_IMPORT_NO_FALLBACK"}' \
+            > imported/pirc/import-report.json
+          echo "Imported $schema_count canonical PiRC schemas and the versioned seven-layer registry."
+          find imported/pirc -type f -print | sort
       - name: Discover contracts with valid Cargo.toml
         id: set-matrix
         env:
@@ -146,10 +131,14 @@ jobs:
                   VALID+=("$name")
                 fi
               done
+              # Workflow/docs-only changes still exercise the canonical settlement crate.
+              if [ ${#VALID[@]} -eq 0 ] && [ -f "contracts/economic_settlement/Cargo.toml" ]; then
+                VALID=("economic_settlement")
+              fi
             else
               # Script/workflow-only changes still smoke-test the canonical settlement contract.
-              if [ -f "contracts/pirc_economic_settlement/Cargo.toml" ]; then
-                VALID=("pirc_economic_settlement")
+              if [ -f "contracts/economic_settlement/Cargo.toml" ]; then
+                VALID=("economic_settlement")
               else
                 VALID=()
               fi
@@ -161,10 +150,10 @@ jobs:
             MATRIX=$(jq -nc --arg c "$TARGET_CONTRACT" '{include:[{contract:$c}]}')
           elif [ ${#VALID[@]} -eq 0 ]; then
             echo "has_contracts=false" >> "$GITHUB_OUTPUT"
-            echo "matrix={\\"include\\":[]}" >> "$GITHUB_OUTPUT"
+            echo "matrix=$(jq -nc '{include: []}')" >> "$GITHUB_OUTPUT"
             exit 0
           else
-            MATRIX=$(printf '%s\\n' "${VALID[@]}" | jq -Rnc '{include: [inputs | {contract: .}]}')
+            MATRIX=$(printf '%s\n' "${VALID[@]}" | jq -Rnc '{include: [inputs | {contract: .}]}')
           fi
 
           echo "has_contracts=true" >> "$GITHUB_OUTPUT"
@@ -375,77 +364,82 @@ jobs:
   # 3. Testnet Deployment & Verification (per contract)
   # =========================================================
   testnet-verify:
-    name: Testnet Verify → ${{ matrix.contract }}
+    name: Pi Testnet Preflight (read-only) → ${{ matrix.contract }}
     needs: [discover, build-test-audit]
     if: >
       needs.discover.outputs.has_contracts == 'true' &&
       github.event_name == 'workflow_dispatch' &&
       github.event.inputs.deploy_testnet == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.discover.outputs.matrix) }}
     env:
       CONTRACT: ${{ matrix.contract }}
+      PI_HORIZON_URL: https://api.testnet.minepi.com
+      PI_SOROBAN_RPC_URL: https://rpc.testnet.minepi.com
+      PI_NETWORK_PASSPHRASE: Pi Testnet
+      PI_EXPECTED_PROTOCOL: "28"
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download WASM binary
+      - name: Download reviewed WASM artifact
         uses: actions/download-artifact@v4
         with:
           name: wasm-${{ matrix.contract }}
           path: wasm/
 
-      - name: Install Stellar CLI
-        run: |
-          curl -fsSL [raw.githubusercontent.com](https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh) | bash
-          cargo binstall -y --locked stellar-cli || cargo install --locked stellar-cli
-
-      - name: Configure Testnet identity
-        run: |
-          stellar network add testnet \
-            --rpc-url [soroban-testnet.stellar.org](https://soroban-testnet.stellar.org) \
-            --network-passphrase "Test SDF Network ; September 2015" || true
-          stellar keys generate ci-deployer --network testnet --fund
-
-      - name: Deploy & smoke-test on Testnet
+      - name: Verify Pi Testnet identity and record artifact (read-only)
+        shell: bash
         run: |
           set -euo pipefail
+          rpc() {
+            local method="$1"
+            curl --fail --silent --show-error --retry 2 --retry-delay 2 \
+              --connect-timeout 10 --max-time 20 \
+              -H 'content-type: application/json' \
+              -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"$method\",\"params\":{}}" \
+              "$PI_SOROBAN_RPC_URL"
+          }
+          horizon="$(curl --fail --silent --show-error --retry 2 --retry-delay 2 \
+            --connect-timeout 10 --max-time 20 "$PI_HORIZON_URL/")"
+          network="$(rpc getNetwork)"
+          health="$(rpc getHealth)"
+          latest="$(rpc getLatestLedger)"
+          test "$(jq -r '.network_passphrase // empty' <<<"$horizon")" = "$PI_NETWORK_PASSPHRASE"
+          test "$(jq -r '.result.passphrase // .result.networkPassphrase // empty' <<<"$network")" = "$PI_NETWORK_PASSPHRASE"
+          test "$(jq -r '.result.protocolVersion // empty' <<<"$network")" = "$PI_EXPECTED_PROTOCOL"
+          health_status="$(jq -r '.result.status // empty' <<<"$health" | tr '[:upper:]' '[:lower:]')"
+          test "$health_status" = "healthy" -o "$health_status" = "ok"
+          latest_ledger="$(jq -r '.result.sequence // .result.ledger // empty' <<<"$latest")"
+          test "$latest_ledger" -gt 0
+          horizon_protocol="$(jq -r '.core_supported_protocol_version // empty' <<<"$horizon")"
+          test "$horizon_protocol" -ge "$PI_EXPECTED_PROTOCOL"
+          wasm="$(find wasm -type f -name '*.wasm' -print -quit)"
+          test -n "$wasm"
+          wasm_sha="$(sha256sum "$wasm" | awk '{print $1}')"
           mkdir -p "reports/$CONTRACT"
-          WASM=$(find wasm -name '*.wasm' | head -n1)
-
-          if [ -z "$WASM" ]; then
-            echo "No WASM found — skipping deployment." | tee "reports/$CONTRACT/testnet-deploy.md"
-            exit 0
-          fi
-
-          stellar contract optimize --wasm "$WASM" || true
-          OPT="${WASM%.wasm}.optimized.wasm"
-          [ -f "$OPT" ] || OPT="$WASM"
-
-          CID=$(stellar contract deploy \
-            --wasm "$OPT" \
-            --source ci-deployer \
-            --network testnet 2>&1 | tail -n1)
-
           {
-            echo "# Testnet Deployment — $CONTRACT"
-            echo "- **Network:** Stellar Testnet"
-            echo "- **Contract ID:** \`$CID\`"
-            echo "- **WASM:** $(basename "$OPT") ($(stat -c%s "$OPT") bytes)"
-            echo "- **Deployed at:** $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          } > "reports/$CONTRACT/testnet-deploy.md"
+            echo "# Pi Testnet Preflight — $CONTRACT"
+            echo "- Network identity: VERIFIED (Pi Testnet)"
+            echo "- Soroban protocol: $PI_EXPECTED_PROTOCOL"
+            echo "- RPC health: $health_status"
+            echo "- Latest ledger: $latest_ledger"
+            echo "- WASM artifact: $(basename "$wasm")"
+            echo "- WASM SHA-256: $wasm_sha"
+            echo "- Deployment: NOT PERFORMED"
+            echo "- Contract ID/code hash/state readback: NOT VERIFIED"
+            echo "- Signing/transactions: NONE"
+          } | tee "reports/$CONTRACT/testnet-preflight.md" >> "$GITHUB_STEP_SUMMARY"
 
-          echo "Deployed $CONTRACT → $CID"
-
-      - name: Upload testnet report
+      - name: Upload preflight evidence
         uses: actions/upload-artifact@v4
         with:
-          name: testnet-${{ matrix.contract }}
+          name: testnet-preflight-${{ matrix.contract }}
           path: reports/${{ matrix.contract }}/
           retention-days: ${{ env.ARTIFACTS_RETENTION_DAYS }}
-          if-no-files-found: ignore
+          if-no-files-found: error
 
   # =========================================================
   # 4. Deep Audit — Subscription contract
@@ -514,8 +508,8 @@ jobs:
   # =========================================================
   # 5. Sync results back to PiRC (main branch only)
   # =========================================================
-  sync-to-pirc:
-    name: Sync Registry → PiRC
+  prepare-pirc-sync-evidence:
+    name: Prepare PiRC Sync Evidence (no automatic push)
     needs: [build-test-audit, testnet-verify]
     if: >
       always() &&
@@ -524,39 +518,39 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Checkout PiRC
-        continue-on-error: true
-        uses: actions/checkout@v4
-        with:
-          repository: Ze0ro99/PiRC
-          token: ${{ secrets.OMNI_SYNC_TOKEN }}
-          path: pirc
-
-      - name: Download all reports
+      - name: Download contract reports
         continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           path: all-reports/
 
-      - name: Push updated registry to PiRC
-        continue-on-error: true
+      - name: Create reviewable PiRC sync manifest
         env:
           RUN_ID: ${{ github.run_id }}
           SHA: ${{ github.sha }}
+          BUILD_RESULT: ${{ needs.build-test-audit.result }}
+          TESTNET_PREFLIGHT_RESULT: ${{ needs.testnet-verify.result }}
         run: |
           set -euo pipefail
-          [ -d pirc ] || { echo "PiRC unavailable — skipping sync."; exit 0; }
-          cd pirc
-          mkdir -p smartcontracts-sync
-          cp -r ../all-reports/* smartcontracts-sync/ 2>/dev/null || true
-          jq -n --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg run "$RUN_ID" --arg sha "$SHA" \
-            '{source:"SmartContracts", run_id:$run, commit:$sha, synced_at:$ts, status:"success"}' \
-            > smartcontracts-sync/LAST_SYNC.json
-          git config user.name  "omni-sync-bot"
-          git config user.email "omni-sync-bot@users.noreply.github.com"
-          git add smartcontracts-sync/
-          git diff --cached --quiet || git commit -m "chore(sync): SmartContracts pipeline run $RUN_ID"
-          git push || echo "Push skipped (no permission or no changes)."
+          mkdir -p pirc-sync-evidence
+          jq -n \
+            --arg source "SmartContracts" \
+            --arg run_id "$RUN_ID" \
+            --arg commit "$SHA" \
+            --arg generated_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg build "$BUILD_RESULT" \
+            --arg testnet_preflight "$TESTNET_PREFLIGHT_RESULT" \
+            '{source:$source,run_id:$run_id,commit:$commit,generated_at:$generated_at,build_test_audit:$build,testnet_preflight:$testnet_preflight,automatic_cross_repository_push:false,review_required:true}' \
+            > pirc-sync-evidence/LAST_SYNC.json
+          cp -r all-reports/. pirc-sync-evidence/reports/ 2>/dev/null || true
+
+      - name: Upload reviewable PiRC sync evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: pirc-sync-evidence
+          path: pirc-sync-evidence/
+          retention-days: ${{ env.ARTIFACTS_RETENTION_DAYS }}
+          if-no-files-found: error
 
   # =========================================================
   # 6. Master Summary
