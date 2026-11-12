@@ -161,10 +161,10 @@ jobs:
             MATRIX=$(jq -nc --arg c "$TARGET_CONTRACT" '{include:[{contract:$c}]}')
           elif [ ${#VALID[@]} -eq 0 ]; then
             echo "has_contracts=false" >> "$GITHUB_OUTPUT"
-            echo "matrix={\\"include\\":[]}" >> "$GITHUB_OUTPUT"
+            echo "matrix=$(jq -nc '{include: []}')" >> "$GITHUB_OUTPUT"
             exit 0
           else
-            MATRIX=$(printf '%s\\n' "${VALID[@]}" | jq -Rnc '{include: [inputs | {contract: .}]}')
+            MATRIX=$(printf '%s\n' "${VALID[@]}" | jq -Rnc '{include: [inputs | {contract: .}]}')
           fi
 
           echo "has_contracts=true" >> "$GITHUB_OUTPUT"
