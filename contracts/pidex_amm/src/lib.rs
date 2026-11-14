@@ -201,19 +201,7 @@ impl PidexAmm {
         }
 
         let (reserve_in, reserve_out) = if a_to_b { (ra, rb) } else { (rb, ra) };
-        let amount_in_after_fee = amount_in
-            .checked_mul(BPS_DENOM - FEE_BPS)
-            .ok_or(Error::Overflow)? / BPS_DENOM;
-        if amount_in_after_fee <= 0 {
-            return Err(Error::ZeroAmount);
-        }
-
-        let numerator = reserve_in.checked_mul(reserve_out).ok_or(Error::Overflow)?;
-        let denominator = reserve_in.checked_add(amount_in_after_fee).ok_or(Error::Overflow)?;
-        let amount_out = reserve_out.checked_sub(numerator / denominator).ok_or(Error::Overflow)?;
-        if amount_out <= 0 {
-            return Err(Error::InsufficientLiquidity);
-        }
+        let amount_out = Self::quote_amount_out(reserve_in, reserve_out, amount_in)?;
         if amount_out < min_out {
             return Err(Error::SlippageExceeded);
         }
@@ -271,8 +259,55 @@ impl PidexAmm {
         Self::reserves(&env)
     }
 
+    /// Read-only quote using the exact integer arithmetic used by swap().
+    pub fn quote(env: Env, a_to_b: bool, amount_in: i128) -> Result<i128, Error> {
+        Self::not_paused(&env)?;
+        if amount_in <= 0 {
+            return Err(Error::ZeroAmount);
+        }
+        let (ra, rb, total) = Self::reserves(&env);
+        if total <= 0 || ra <= 0 || rb <= 0 {
+            return Err(Error::InsufficientLiquidity);
+        }
+        let (reserve_in, reserve_out) = if a_to_b { (ra, rb) } else { (rb, ra) };
+        Self::quote_amount_out(reserve_in, reserve_out, amount_in)
+    }
+
+    /// Authoritative pool identity and state for registry-backed adapters.
+    pub fn get_pool_info(
+        env: Env,
+    ) -> Result<(Address, Address, i128, i128, i128, bool, u32), Error> {
+        let (token_a, token_b) = Self::tokens(&env)?;
+        let (reserve_a, reserve_b, total_shares) = Self::reserves(&env);
+        let paused: bool = env.storage().instance().get(&DataKey::Paused).unwrap_or(false);
+        Ok((token_a, token_b, reserve_a, reserve_b, total_shares, paused, FEE_BPS as u32))
+    }
+
+
     pub fn shares_of(env: Env, who: Address) -> i128 {
         env.storage().persistent().get(&DataKey::Shares(who)).unwrap_or(0)
+    }
+
+    fn quote_amount_out(reserve_in: i128, reserve_out: i128, amount_in: i128) -> Result<i128, Error> {
+        if amount_in <= 0 {
+            return Err(Error::ZeroAmount);
+        }
+        if reserve_in <= 0 || reserve_out <= 0 {
+            return Err(Error::InsufficientLiquidity);
+        }
+        let amount_in_after_fee = amount_in
+            .checked_mul(BPS_DENOM - FEE_BPS)
+            .ok_or(Error::Overflow)? / BPS_DENOM;
+        if amount_in_after_fee <= 0 {
+            return Err(Error::ZeroAmount);
+        }
+        let numerator = reserve_out.checked_mul(amount_in_after_fee).ok_or(Error::Overflow)?;
+        let denominator = reserve_in.checked_add(amount_in_after_fee).ok_or(Error::Overflow)?;
+        let amount_out = numerator / denominator;
+        if amount_out <= 0 {
+            return Err(Error::InsufficientLiquidity);
+        }
+        Ok(amount_out)
     }
 
     fn only_admin(env: &Env) -> Result<(), Error> {
