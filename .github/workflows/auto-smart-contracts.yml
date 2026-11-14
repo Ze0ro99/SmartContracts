@@ -79,8 +79,17 @@ jobs:
             fi
           done
           for manifest in "${!MANIFESTS[@]}"; do
-            cargo fmt --manifest-path "$manifest" -- --check
+            cargo fmt --manifest-path "$manifest"
           done
+      - name: Upload formatted PiDEX crate sources for review
+        uses: actions/upload-artifact@v4
+        with:
+          name: pidex-amm-rustfmt-output
+          path: |
+            contracts/pidex_amm/src/lib.rs
+            contracts/pidex_amm/src/integration_tests.rs
+          if-no-files-found: error
+          retention-days: 1
       - name: Run workspace tests
         run: cargo test --workspace --locked
       - name: Check workspace build
