@@ -43,7 +43,7 @@ pub struct PoolRecord {
 enum DataKey {
     Admin,
     Pool(BytesN<32>),
-    ReserveOwner(BytesN<32>),
+    Reserve(BytesN<32>),
 }
 
 #[contract]
@@ -157,7 +157,7 @@ impl PiGoldCoordinator {
 
     fn require_admin(env: &Env, admin: &Address) -> Result<(), Error> {
         let stored: Address = env.storage().instance().get(&DataKey::Admin).ok_or(Error::NotInitialized)?;
-        if stored != *admin {
+        if stored != admin.clone() {
             return Err(Error::Unauthorized);
         }
         admin.require_auth();
