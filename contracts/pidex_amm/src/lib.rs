@@ -4,8 +4,8 @@
 //! but does not hide the swap amount, assets, addresses or resulting transfers.
 
 use soroban_sdk::{
-    contract, contractclient, contracterror, contractimpl, contracttype, symbol_short,
-    token, Address, BytesN, Env,
+    contract, contractclient, contracterror, contractimpl, contracttype, symbol_short, token,
+    Address, BytesN, Env,
 };
 
 const FEE_BPS: i128 = 30;
@@ -53,7 +53,12 @@ pub struct PidexAmm;
 
 #[contractimpl]
 impl PidexAmm {
-    pub fn initialize(env: Env, admin: Address, token_a: Address, token_b: Address) -> Result<(), Error> {
+    pub fn initialize(
+        env: Env,
+        admin: Address,
+        token_a: Address,
+        token_b: Address,
+    ) -> Result<(), Error> {
         if env.storage().instance().has(&DataKey::Admin) {
             return Err(Error::AlreadyInitialized);
         }
@@ -68,21 +73,30 @@ impl PidexAmm {
         env.storage().instance().set(&DataKey::ReserveB, &0i128);
         env.storage().instance().set(&DataKey::TotalShares, &0i128);
         env.storage().instance().set(&DataKey::Paused, &false);
-        env.events().publish((symbol_short!("pidex"), symbol_short!("init")), (token_a, token_b));
+        env.events().publish(
+            (symbol_short!("pidex"), symbol_short!("init")),
+            (token_a, token_b),
+        );
         Ok(())
     }
 
     pub fn set_zk_verifier(env: Env, verifier: Address) -> Result<(), Error> {
         Self::only_admin(&env)?;
-        env.storage().instance().set(&DataKey::ZkVerifier, &verifier);
-        env.events().publish((symbol_short!("pidex"), symbol_short!("verifier")), verifier);
+        env.storage()
+            .instance()
+            .set(&DataKey::ZkVerifier, &verifier);
+        env.events().publish(
+            (symbol_short!("pidex"), symbol_short!("verifier")),
+            verifier,
+        );
         Ok(())
     }
 
     pub fn pause(env: Env, paused: bool) -> Result<(), Error> {
         Self::only_admin(&env)?;
         env.storage().instance().set(&DataKey::Paused, &paused);
-        env.events().publish((symbol_short!("pidex"), symbol_short!("pause")), paused);
+        env.events()
+            .publish((symbol_short!("pidex"), symbol_short!("pause")), paused);
         Ok(())
     }
 
@@ -135,8 +149,16 @@ impl PidexAmm {
         let next_rb = rb.checked_add(used_b).ok_or(Error::Overflow)?;
         let next_total = total.checked_add(minted).ok_or(Error::Overflow)?;
 
-        token::Client::new(&env, &token_a).transfer(&from, &env.current_contract_address(), &used_a);
-        token::Client::new(&env, &token_b).transfer(&from, &env.current_contract_address(), &used_b);
+        token::Client::new(&env, &token_a).transfer(
+            &from,
+            &env.current_contract_address(),
+            &used_a,
+        );
+        token::Client::new(&env, &token_b).transfer(
+            &from,
+            &env.current_contract_address(),
+            &used_b,
+        );
 
         Self::set_reserves(&env, next_ra, next_rb, next_total);
         Self::add_shares(&env, &from, minted)?;
@@ -207,7 +229,11 @@ impl PidexAmm {
         }
 
         let (token_a, token_b) = Self::tokens(&env)?;
-        let (token_in, token_out) = if a_to_b { (token_a, token_b) } else { (token_b, token_a) };
+        let (token_in, token_out) = if a_to_b {
+            (token_a, token_b)
+        } else {
+            (token_b, token_a)
+        };
         let (next_ra, next_rb) = if a_to_b {
             (
                 ra.checked_add(amount_in).ok_or(Error::Overflow)?,
@@ -226,8 +252,16 @@ impl PidexAmm {
             return Err(Error::InvariantViolation);
         }
 
-        token::Client::new(&env, &token_in).transfer(&from, &env.current_contract_address(), &amount_in);
-        token::Client::new(&env, &token_out).transfer(&env.current_contract_address(), &from, &amount_out);
+        token::Client::new(&env, &token_in).transfer(
+            &from,
+            &env.current_contract_address(),
+            &amount_in,
+        );
+        token::Client::new(&env, &token_out).transfer(
+            &env.current_contract_address(),
+            &from,
+            &amount_out,
+        );
         Self::set_reserves(&env, next_ra, next_rb, total);
         env.events().publish(
             (symbol_short!("pidex"), symbol_short!("swap")),
@@ -246,7 +280,10 @@ impl PidexAmm {
         min_out: i128,
         commitment: BytesN<32>,
     ) -> Result<i128, Error> {
-        let verifier: Address = env.storage().instance().get(&DataKey::ZkVerifier)
+        let verifier: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::ZkVerifier)
             .ok_or(Error::VerifierNotConfigured)?;
         let verified = VerifierClient::new(&env, &verifier).has_commitment(&commitment);
         if !verified {
@@ -279,8 +316,20 @@ impl PidexAmm {
     ) -> Result<(Address, Address, i128, i128, i128, bool, u32), Error> {
         let (token_a, token_b) = Self::tokens(&env)?;
         let (reserve_a, reserve_b, total_shares) = Self::reserves(&env);
-        let paused: bool = env.storage().instance().get(&DataKey::Paused).unwrap_or(false);
-        Ok((token_a, token_b, reserve_a, reserve_b, total_shares, paused, FEE_BPS as u32))
+        let paused: bool = env
+            .storage()
+            .instance()
+            .get(&DataKey::Paused)
+            .unwrap_or(false);
+        Ok((
+            token_a,
+            token_b,
+            reserve_a,
+            reserve_b,
+            total_shares,
+            paused,
+            FEE_BPS as u32,
+        ))
     }
 
 
@@ -288,7 +337,11 @@ impl PidexAmm {
         env.storage().persistent().get(&DataKey::Shares(who)).unwrap_or(0)
     }
 
-    fn quote_amount_out(reserve_in: i128, reserve_out: i128, amount_in: i128) -> Result<i128, Error> {
+    fn quote_amount_out(
+        reserve_in: i128,
+        reserve_out: i128,
+        amount_in: i128,
+    ) -> Result<i128, Error> {
         if amount_in <= 0 {
             return Err(Error::ZeroAmount);
         }
@@ -297,12 +350,17 @@ impl PidexAmm {
         }
         let amount_in_after_fee = amount_in
             .checked_mul(BPS_DENOM - FEE_BPS)
-            .ok_or(Error::Overflow)? / BPS_DENOM;
+            .ok_or(Error::Overflow)?
+            / BPS_DENOM;
         if amount_in_after_fee <= 0 {
             return Err(Error::ZeroAmount);
         }
-        let numerator = reserve_out.checked_mul(amount_in_after_fee).ok_or(Error::Overflow)?;
-        let denominator = reserve_in.checked_add(amount_in_after_fee).ok_or(Error::Overflow)?;
+        let numerator = reserve_out
+            .checked_mul(amount_in_after_fee)
+            .ok_or(Error::Overflow)?;
+        let denominator = reserve_in
+            .checked_add(amount_in_after_fee)
+            .ok_or(Error::Overflow)?;
         let amount_out = numerator / denominator;
         if amount_out <= 0 {
             return Err(Error::InsufficientLiquidity);
@@ -311,7 +369,11 @@ impl PidexAmm {
     }
 
     fn only_admin(env: &Env) -> Result<(), Error> {
-        let admin: Address = env.storage().instance().get(&DataKey::Admin).ok_or(Error::NotInitialized)?;
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)?;
         admin.require_auth();
         Ok(())
     }
@@ -320,15 +382,32 @@ impl PidexAmm {
         if !env.storage().instance().has(&DataKey::Admin) {
             return Err(Error::NotInitialized);
         }
-        let paused: bool = env.storage().instance().get(&DataKey::Paused).unwrap_or(false);
-        if paused { Err(Error::Paused) } else { Ok(()) }
+        let paused: bool = env
+            .storage()
+            .instance()
+            .get(&DataKey::Paused)
+            .unwrap_or(false);
+        if paused {
+            Err(Error::Paused)
+        } else {
+            Ok(())
+        }
     }
 
     fn reserves(env: &Env) -> (i128, i128, i128) {
         (
-            env.storage().instance().get(&DataKey::ReserveA).unwrap_or(0),
-            env.storage().instance().get(&DataKey::ReserveB).unwrap_or(0),
-            env.storage().instance().get(&DataKey::TotalShares).unwrap_or(0),
+            env.storage()
+                .instance()
+                .get(&DataKey::ReserveA)
+                .unwrap_or(0),
+            env.storage()
+                .instance()
+                .get(&DataKey::ReserveB)
+                .unwrap_or(0),
+            env.storage()
+                .instance()
+                .get(&DataKey::TotalShares)
+                .unwrap_or(0),
         )
     }
 
@@ -339,25 +418,45 @@ impl PidexAmm {
     }
 
     fn tokens(env: &Env) -> Result<(Address, Address), Error> {
-        let token_a: Address = env.storage().instance().get(&DataKey::TokenA).ok_or(Error::NotInitialized)?;
-        let token_b: Address = env.storage().instance().get(&DataKey::TokenB).ok_or(Error::NotInitialized)?;
+        let token_a: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::TokenA)
+            .ok_or(Error::NotInitialized)?;
+        let token_b: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::TokenB)
+            .ok_or(Error::NotInitialized)?;
         Ok((token_a, token_b))
     }
 
     fn add_shares(env: &Env, who: &Address, delta: i128) -> Result<(), Error> {
-        let current: i128 = env.storage().persistent().get(&DataKey::Shares(who.clone())).unwrap_or(0);
+        let current: i128 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Shares(who.clone()))
+            .unwrap_or(0);
         let next = current.checked_add(delta).ok_or(Error::Overflow)?;
-        env.storage().persistent().set(&DataKey::Shares(who.clone()), &next);
+        env.storage()
+            .persistent()
+            .set(&DataKey::Shares(who.clone()), &next);
         Ok(())
     }
 
     fn sub_shares(env: &Env, who: &Address, delta: i128) -> Result<(), Error> {
-        let current: i128 = env.storage().persistent().get(&DataKey::Shares(who.clone())).unwrap_or(0);
+        let current: i128 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Shares(who.clone()))
+            .unwrap_or(0);
         if current < delta {
             return Err(Error::InsufficientLiquidity);
         }
         let next = current.checked_sub(delta).ok_or(Error::Overflow)?;
-        env.storage().persistent().set(&DataKey::Shares(who.clone()), &next);
+        env.storage()
+            .persistent()
+            .set(&DataKey::Shares(who.clone()), &next);
         Ok(())
     }
 }
@@ -433,7 +532,13 @@ mod test {
         client.initialize(&admin, &token_a, &token_b);
         client.set_zk_verifier(&verifier);
         assert!(client
-            .try_swap_with_verified_commitment(&Address::generate(&env), &true, &100, &1, &commitment)
+            .try_swap_with_verified_commitment(
+                &Address::generate(&env),
+                &true,
+                &100,
+                &1,
+                &commitment
+            )
             .is_err());
     }
 }
