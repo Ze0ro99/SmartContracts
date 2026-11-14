@@ -50,7 +50,7 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
-      - name: Check formatting for Rust changes
+      - name: Check formatting for changed Rust crates
         shell: bash
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
@@ -62,10 +62,25 @@ jobs:
           fi
           mapfile -t RUST_FILES < <(git diff --name-only "$BASE_SHA...HEAD" -- '*.rs')
           if [ "${#RUST_FILES[@]}" -eq 0 ]; then
-            echo "No Rust source changed; skipping workspace-wide formatting baseline check."
-          else
-            cargo fmt --all -- --check
+            echo "No Rust source changed; skipping formatting."
+            exit 0
           fi
+          declare -A MANIFESTS=()
+          for file in "${RUST_FILES[@]}"; do
+            dir="$(dirname "$file")"
+            while [ "$dir" != "." ] && [ ! -f "$dir/Cargo.toml" ]; do
+              dir="$(dirname "$dir")"
+            done
+            if [ -f "$dir/Cargo.toml" ]; then
+              MANIFESTS["$dir/Cargo.toml"]=1
+            else
+              echo "::error::Could not resolve Cargo.toml for changed Rust file: $file"
+              exit 1
+            fi
+          done
+          for manifest in "${!MANIFESTS[@]}"; do
+            cargo fmt --manifest-path "$manifest" -- --check
+          done
       - name: Run workspace tests
         run: cargo test --workspace --locked
       - name: Check workspace build
