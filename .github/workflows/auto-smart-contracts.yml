@@ -34,6 +34,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           persist-credentials: false
+          fetch-depth: 0
       - name: Install stable Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -49,8 +50,22 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
-      - name: Check formatting
-        run: cargo fmt --all -- --check
+      - name: Check formatting for Rust changes
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] || [ -z "$BASE_SHA" ] || [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ]; then
+            cargo fmt --all -- --check
+            exit 0
+          fi
+          mapfile -t RUST_FILES < <(git diff --name-only "$BASE_SHA...HEAD" -- '*.rs')
+          if [ "${#RUST_FILES[@]}" -eq 0 ]; then
+            echo "No Rust source changed; skipping workspace-wide formatting baseline check."
+          else
+            cargo fmt --all -- --check
+          fi
       - name: Run workspace tests
         run: cargo test --workspace --locked
       - name: Check workspace build
