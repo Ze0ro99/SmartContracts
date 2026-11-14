@@ -1,0 +1,15 @@
+[package]
+name = "pigold_coordinator"
+version = "0.1.0"
+edition = "2021"
+license-file = "../../LICENSE"
+description = "PiGold non-custodial pool registry and route validator"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+soroban-sdk = { workspace = true }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
