@@ -50,6 +50,15 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
+      - name: Format PiGold coordinator in ephemeral validation workspace
+        run: cargo fmt --manifest-path contracts/pigold_coordinator/Cargo.toml
+      - name: Upload formatted PiGold source for review
+        uses: actions/upload-artifact@v4
+        with:
+          name: pigold-coordinator-rustfmt
+          path: contracts/pigold_coordinator/src/lib.rs
+          if-no-files-found: error
+          retention-days: 1
       - name: Check formatting for changed Rust crates
         shell: bash
         env:
