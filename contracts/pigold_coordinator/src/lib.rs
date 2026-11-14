@@ -73,10 +73,18 @@ impl PiGoldCoordinator {
         if asset_a.len() == 0 || asset_b.len() == 0 || asset_a == asset_b {
             return Err(Error::InvalidAssetPair);
         }
-        if env.storage().persistent().has(&DataKey::Pool(pool_id.clone())) {
+        if env
+            .storage()
+            .persistent()
+            .has(&DataKey::Pool(pool_id.clone()))
+        {
             return Err(Error::PoolAlreadyRegistered);
         }
-        if env.storage().persistent().has(&DataKey::Reserve(reserve_accounting_id.clone())) {
+        if env
+            .storage()
+            .persistent()
+            .has(&DataKey::Reserve(reserve_accounting_id.clone()))
+        {
             return Err(Error::ReserveAlreadyAssigned);
         }
         let record = PoolRecord {
@@ -86,8 +94,12 @@ impl PiGoldCoordinator {
             reserve_accounting_id: reserve_accounting_id.clone(),
             enabled: true,
         };
-        env.storage().persistent().set(&DataKey::Pool(pool_id.clone()), &record);
-        env.storage().persistent().set(&DataKey::Reserve(reserve_accounting_id), &pool_id);
+        env.storage()
+            .persistent()
+            .set(&DataKey::Pool(pool_id.clone()), &record);
+        env.storage()
+            .persistent()
+            .set(&DataKey::Reserve(reserve_accounting_id), &pool_id);
         env.events().publish(
             (symbol_short!("pigold"), symbol_short!("pool_add")),
             pool_id,
@@ -105,7 +117,9 @@ impl PiGoldCoordinator {
         Self::require_admin(&env, &admin)?;
         let mut record = Self::load_pool(&env, &pool_id)?;
         record.enabled = enabled;
-        env.storage().persistent().set(&DataKey::Pool(pool_id.clone()), &record);
+        env.storage()
+            .persistent()
+            .set(&DataKey::Pool(pool_id.clone()), &record);
         env.events().publish(
             (symbol_short!("pigold"), symbol_short!("pool_st")),
             (pool_id, enabled),
@@ -156,7 +170,11 @@ impl PiGoldCoordinator {
     }
 
     fn require_admin(env: &Env, admin: &Address) -> Result<(), Error> {
-        let stored: Address = env.storage().instance().get(&DataKey::Admin).ok_or(Error::NotInitialized)?;
+        let stored: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)?;
         if stored != admin.clone() {
             return Err(Error::Unauthorized);
         }
@@ -165,7 +183,10 @@ impl PiGoldCoordinator {
     }
 
     fn load_pool(env: &Env, pool_id: &BytesN<32>) -> Result<PoolRecord, Error> {
-        env.storage().persistent().get(&DataKey::Pool(pool_id.clone())).ok_or(Error::PoolNotFound)
+        env.storage()
+            .persistent()
+            .get(&DataKey::Pool(pool_id.clone()))
+            .ok_or(Error::PoolNotFound)
     }
 }
 
@@ -190,15 +211,24 @@ mod test {
         let pool_ab = BytesN::from_array(&env, &[1u8; 32]);
         let pool_bc = BytesN::from_array(&env, &[2u8; 32]);
         client.register_pool(
-            &admin, &pool_ab, &String::from_str(&env, "PiCash"),
-            &String::from_str(&env, "PiBank"), &BytesN::from_array(&env, &[11u8; 32]),
+            &admin,
+            &pool_ab,
+            &String::from_str(&env, "PiCash"),
+            &String::from_str(&env, "PiBank"),
+            &BytesN::from_array(&env, &[11u8; 32]),
         );
         client.register_pool(
-            &admin, &pool_bc, &String::from_str(&env, "PiBank"),
-            &String::from_str(&env, "PiYellow"), &BytesN::from_array(&env, &[12u8; 32]),
+            &admin,
+            &pool_bc,
+            &String::from_str(&env, "PiBank"),
+            &String::from_str(&env, "PiYellow"),
+            &BytesN::from_array(&env, &[12u8; 32]),
         );
         let route = Vec::from_array(&env, [pool_ab, pool_bc]);
-        assert_eq!(client.validate_route(&route), String::from_str(&env, "PiYellow"));
+        assert_eq!(
+            client.validate_route(&route),
+            String::from_str(&env, "PiYellow")
+        );
     }
 
     #[test]
@@ -208,13 +238,19 @@ mod test {
         let client = PiGoldCoordinatorClient::new(&env, &id);
         let reserve = BytesN::from_array(&env, &[9u8; 32]);
         client.register_pool(
-            &admin, &BytesN::from_array(&env, &[1u8; 32]),
-            &String::from_str(&env, "PiCash"), &String::from_str(&env, "PiBank"), &reserve,
+            &admin,
+            &BytesN::from_array(&env, &[1u8; 32]),
+            &String::from_str(&env, "PiCash"),
+            &String::from_str(&env, "PiBank"),
+            &reserve,
         );
         assert_eq!(
             client.try_register_pool(
-                &admin, &BytesN::from_array(&env, &[2u8; 32]),
-                &String::from_str(&env, "PiBank"), &String::from_str(&env, "PiYellow"), &reserve,
+                &admin,
+                &BytesN::from_array(&env, &[2u8; 32]),
+                &String::from_str(&env, "PiBank"),
+                &String::from_str(&env, "PiYellow"),
+                &reserve,
             ),
             Err(Ok(Error::ReserveAlreadyAssigned)),
         );
@@ -227,8 +263,11 @@ mod test {
         let client = PiGoldCoordinatorClient::new(&env, &id);
         let pool = BytesN::from_array(&env, &[3u8; 32]);
         client.register_pool(
-            &admin, &pool, &String::from_str(&env, "PiCash"),
-            &String::from_str(&env, "PiBank"), &BytesN::from_array(&env, &[13u8; 32]),
+            &admin,
+            &pool,
+            &String::from_str(&env, "PiCash"),
+            &String::from_str(&env, "PiBank"),
+            &BytesN::from_array(&env, &[13u8; 32]),
         );
         assert_eq!(
             client.try_validate_route(&Vec::from_array(&env, [pool.clone(), pool.clone()])),
@@ -236,8 +275,11 @@ mod test {
         );
         let disconnected = BytesN::from_array(&env, &[4u8; 32]);
         client.register_pool(
-            &admin, &disconnected, &String::from_str(&env, "PiYellow"),
-            &String::from_str(&env, "PiPurple"), &BytesN::from_array(&env, &[14u8; 32]),
+            &admin,
+            &disconnected,
+            &String::from_str(&env, "PiYellow"),
+            &String::from_str(&env, "PiPurple"),
+            &BytesN::from_array(&env, &[14u8; 32]),
         );
         assert_eq!(
             client.try_validate_route(&Vec::from_array(&env, [pool, disconnected])),
@@ -252,8 +294,11 @@ mod test {
         let client = PiGoldCoordinatorClient::new(&env, &id);
         let pool = BytesN::from_array(&env, &[5u8; 32]);
         client.register_pool(
-            &admin, &pool, &String::from_str(&env, "PiCash"),
-            &String::from_str(&env, "PiBank"), &BytesN::from_array(&env, &[15u8; 32]),
+            &admin,
+            &pool,
+            &String::from_str(&env, "PiCash"),
+            &String::from_str(&env, "PiBank"),
+            &BytesN::from_array(&env, &[15u8; 32]),
         );
         client.set_pool_enabled(&admin, &pool, &false);
         assert_eq!(
