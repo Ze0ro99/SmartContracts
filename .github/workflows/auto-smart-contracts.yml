@@ -21,7 +21,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: smartcontracts-readonly-ci-\${{ github.workflow }}-\${{ github.ref }}
+  group: smartcontracts-readonly-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -46,9 +46,9 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: \${{ runner.os }}-cargo-\${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            \${{ runner.os }}-cargo-
+            ${{ runner.os }}-cargo-
       - name: Check formatting
         run: cargo fmt --all -- --check
       - name: Run workspace tests
