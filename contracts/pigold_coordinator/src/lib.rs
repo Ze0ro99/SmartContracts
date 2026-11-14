@@ -107,7 +107,7 @@ impl PiGoldCoordinator {
         record.enabled = enabled;
         env.storage().persistent().set(&DataKey::Pool(pool_id.clone()), &record);
         env.events().publish(
-            (symbol_short!("pigold"), symbol_short!("pool_state")),
+            (symbol_short!("pigold"), symbol_short!("pool_st")),
             (pool_id, enabled),
         );
         Ok(())
