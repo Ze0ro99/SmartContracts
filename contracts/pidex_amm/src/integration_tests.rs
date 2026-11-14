@@ -1,9 +1,5 @@
 use super::*;
-use soroban_sdk::{
-    testutils::Address as _,
-    token::StellarAssetClient,
-    Address, Env,
-};
+use soroban_sdk::{testutils::Address as _, token::StellarAssetClient, Address, Env};
 
 #[test]
 fn initializes_deposits_swaps_and_withdraws_with_checked_reserves() {
@@ -82,13 +78,8 @@ fn rejects_slippage_and_blocks_operations_while_paused() {
         client.try_deposit(&trader, &100, &200),
         Err(Ok(Error::Paused)),
     );
-    assert_eq!(
-        client.try_withdraw(&trader, &1),
-        Err(Ok(Error::Paused)),
-    );
-
+    assert_eq!(client.try_withdraw(&trader, &1), Err(Ok(Error::Paused)),);
 }
-
 
 #[test]
 fn read_only_quote_matches_swap_and_does_not_mutate_reserves() {
