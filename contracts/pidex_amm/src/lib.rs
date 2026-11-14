@@ -332,9 +332,11 @@ impl PidexAmm {
         ))
     }
 
-
     pub fn shares_of(env: Env, who: Address) -> i128 {
-        env.storage().persistent().get(&DataKey::Shares(who)).unwrap_or(0)
+        env.storage()
+            .persistent()
+            .get(&DataKey::Shares(who))
+            .unwrap_or(0)
     }
 
     fn quote_amount_out(
