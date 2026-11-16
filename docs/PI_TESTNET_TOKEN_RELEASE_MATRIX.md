@@ -15,7 +15,8 @@ Every fungible token must have its own Soroban contract instance, issuer/admin p
 | PiGovernance | `pirc_test_asset` template only if a fungible governance token is intended | UNMAPPED / NOT DEPLOYED | Confirm voting rights, transferability, delegation and governance contract |
 | PiYellow | `pirc_test_asset` template | UNMAPPED / NOT DEPLOYED | Confirm canonical asset identity and economics |
 | PiOrange | `pirc_test_asset` template | UNMAPPED / NOT DEPLOYED | Confirm canonical asset identity and economics |
-| Indigo / Purple | `pirc_test_asset` template | UNMAPPED / NOT DEPLOYED | Confirm whether these are separate tokens or alternate layer names; never alias silently |
+| Indigo | `pirc_test_asset` template | UNMAPPED / NOT DEPLOYED | Confirm canonical asset identity and economics |
+| Purple | `pirc_test_asset` template | UNMAPPED / NOT DEPLOYED | Confirm canonical asset identity and economics |
 | OUSD (test asset) | `ousd_test_token` | SOURCE EXISTS / NOT DEPLOYED | Test-only; no USD peg, backing, redemption, reserve or parity claim |
 | PiGold | `pigold_coordinator` | REGISTRY / ROUTE VALIDATOR SOURCE | Not a token issuer, custodian, AMM or proof of live liquidity |
 
