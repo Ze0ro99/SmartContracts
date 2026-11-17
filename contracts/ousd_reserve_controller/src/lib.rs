@@ -105,7 +105,9 @@ impl OusdReserveController {
             .ok_or(Error::UnknownReserve)
     }
     fn write_reserve(env: &Env, record: &ReserveRecord) {
-        env.storage().instance().set(&DataKey::Reserve(record.id), record);
+        env.storage()
+            .instance()
+            .set(&DataKey::Reserve(record.id), record);
     }
     fn read_liability(env: &Env, id: u64) -> Result<LiabilityRecord, Error> {
         env.storage()
@@ -114,7 +116,9 @@ impl OusdReserveController {
             .ok_or(Error::UnknownLiability)
     }
     fn write_liability(env: &Env, record: &LiabilityRecord) {
-        env.storage().instance().set(&DataKey::Liability(record.id), record);
+        env.storage()
+            .instance()
+            .set(&DataKey::Liability(record.id), record);
     }
 }
 
@@ -184,9 +188,14 @@ impl OusdReserveController {
             .unwrap_or(1);
         let next = id.checked_add(1).ok_or(Error::ArithmeticError)?;
         let record = ReserveRecord {
-            id, attestor: verifier.clone(), evidence_hash, attested_usd_micros: amount_usd_micros,
-            available_usd_micros: amount_usd_micros, allocated_usd_micros: 0,
-            paid_out_usd_micros: 0, attested_ledger: env.ledger().sequence(),
+            id,
+            attestor: verifier.clone(),
+            evidence_hash,
+            attested_usd_micros: amount_usd_micros,
+            available_usd_micros: amount_usd_micros,
+            allocated_usd_micros: 0,
+            paid_out_usd_micros: 0,
+            attested_ledger: env.ledger().sequence(),
         };
         env.storage().instance().set(&DataKey::NextReserveId, &next);
         Self::write_reserve(&env, &record);
@@ -208,7 +217,9 @@ impl OusdReserveController {
     ) -> Result<u64, Error> {
         Self::require_initialized(&env)?;
         Self::require_role(&env, &issuer, DataKey::Issuer)?;
-        if amount_usd_micros <= 0 { return Err(Error::InvalidAmount); }
+        if amount_usd_micros <= 0 {
+            return Err(Error::InvalidAmount);
+        }
         let mut reserve = Self::read_reserve(&env, reserve_id)?;
         if reserve.available_usd_micros < amount_usd_micros {
             return Err(Error::InsufficientReserve);
@@ -236,10 +247,18 @@ impl OusdReserveController {
             .unwrap_or(1);
         let next_id = id.checked_add(1).ok_or(Error::ArithmeticError)?;
         let record = LiabilityRecord {
-            id, reserve_id, beneficiary: beneficiary.clone(), evidence_hash, amount_usd_micros,
-            state: LiabilityState::Issued, payout_evidence_hash: None, payout_ledger: None,
+            id,
+            reserve_id,
+            beneficiary: beneficiary.clone(),
+            evidence_hash,
+            amount_usd_micros,
+            state: LiabilityState::Issued,
+            payout_evidence_hash: None,
+            payout_ledger: None,
         };
-        env.storage().instance().set(&DataKey::NextLiabilityId, &next_id);
+        env.storage()
+            .instance()
+            .set(&DataKey::NextLiabilityId, &next_id);
         env.storage()
             .instance()
             .set(&DataKey::OutstandingUsdMicros, &next_outstanding);
@@ -303,7 +322,11 @@ impl OusdReserveController {
             .paid_out_usd_micros
             .checked_add(liability.amount_usd_micros)
             .ok_or(Error::ArithmeticError)?;
-        let outstanding: i128 = env.storage().instance().get(&DataKey::OutstandingUsdMicros).unwrap_or(0);
+        let outstanding: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::OutstandingUsdMicros)
+            .unwrap_or(0);
         let next_outstanding = outstanding
             .checked_sub(liability.amount_usd_micros)
             .ok_or(Error::ArithmeticError)?;
@@ -318,7 +341,9 @@ impl OusdReserveController {
         liability.state = LiabilityState::Paid;
         liability.payout_evidence_hash = Some(payout_evidence_hash);
         liability.payout_ledger = Some(env.ledger().sequence());
-        env.storage().instance().set(&DataKey::OutstandingUsdMicros, &next_outstanding);
+        env.storage()
+            .instance()
+            .set(&DataKey::OutstandingUsdMicros, &next_outstanding);
         env.storage()
             .instance()
             .set(&DataKey::BurnableUsdMicros, &next_burnable);
