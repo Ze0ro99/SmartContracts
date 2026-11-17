@@ -446,5 +446,40 @@ mod tests {
         assert_eq!(final_reserve.available_usd_micros, 600_000);
         assert_eq!(final_reserve.allocated_usd_micros, 0);
         assert_eq!(final_reserve.paid_out_usd_micros, 400_000);
+
+        // The same reserve evidence cannot be counted twice.
+        assert!(client
+            .try_attest_settled_reserve(&reserve_verifier, &reserve_hash, &1_000_000)
+            .is_err());
+
+        // The same liability evidence cannot create a second allocation.
+        assert!(client
+            .try_issue_liability(
+                &issuer,
+                &reserve_id,
+                &beneficiary,
+                &liability_hash,
+                &100_000,
+            )
+            .is_err());
+
+        // A payout evidence hash cannot be replayed for a different liability.
+        let second_liability_hash = BytesN::from_array(&env, &[4u8; 32]);
+        let second_liability = client.issue_liability(
+            &issuer,
+            &reserve_id,
+            &beneficiary,
+            &second_liability_hash,
+            &100_000,
+        );
+        client.request_redemption(&beneficiary, &second_liability);
+        assert!(client
+            .try_confirm_settled_payout(
+                &payout_verifier,
+                &second_liability,
+                &payout_hash,
+                &100_000,
+            )
+            .is_err());
     }
 }
