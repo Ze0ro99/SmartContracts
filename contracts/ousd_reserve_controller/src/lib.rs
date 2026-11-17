@@ -38,6 +38,9 @@ enum DataKey {
     BurnableUsdMicros,
     Reserve(u64),
     Liability(u64),
+    ReserveEvidence(BytesN<32>),
+    LiabilityEvidence(BytesN<32>),
+    PayoutEvidence(BytesN<32>),
 }
 
 #[contracttype]
@@ -181,6 +184,10 @@ impl OusdReserveController {
         if amount_usd_micros <= 0 {
             return Err(Error::InvalidAmount);
         }
+        let evidence_key = DataKey::ReserveEvidence(evidence_hash.clone());
+        if env.storage().instance().has(&evidence_key) {
+            return Err(Error::InvalidLiabilityState);
+        }
         let id: u64 = env
             .storage()
             .instance()
@@ -198,6 +205,7 @@ impl OusdReserveController {
             attested_ledger: env.ledger().sequence(),
         };
         env.storage().instance().set(&DataKey::NextReserveId, &next);
+        env.storage().instance().set(&evidence_key, &true);
         Self::write_reserve(&env, &record);
         env.events().publish(
             (symbol_short!("ousd"), symbol_short!("reserve")),
@@ -219,6 +227,10 @@ impl OusdReserveController {
         Self::require_role(&env, &issuer, DataKey::Issuer)?;
         if amount_usd_micros <= 0 {
             return Err(Error::InvalidAmount);
+        }
+        let evidence_key = DataKey::LiabilityEvidence(evidence_hash.clone());
+        if env.storage().instance().has(&evidence_key) {
+            return Err(Error::InvalidLiabilityState);
         }
         let mut reserve = Self::read_reserve(&env, reserve_id)?;
         if reserve.available_usd_micros < amount_usd_micros {
@@ -262,6 +274,7 @@ impl OusdReserveController {
         env.storage()
             .instance()
             .set(&DataKey::OutstandingUsdMicros, &next_outstanding);
+        env.storage().instance().set(&evidence_key, &true);
         Self::write_reserve(&env, &reserve);
         Self::write_liability(&env, &record);
         env.events().publish(
@@ -313,6 +326,10 @@ impl OusdReserveController {
         if settled_amount_usd_micros != liability.amount_usd_micros {
             return Err(Error::PayoutAmountMismatch);
         }
+        let evidence_key = DataKey::PayoutEvidence(payout_evidence_hash.clone());
+        if env.storage().instance().has(&evidence_key) {
+            return Err(Error::InvalidLiabilityState);
+        }
         let mut reserve = Self::read_reserve(&env, liability.reserve_id)?;
         reserve.allocated_usd_micros = reserve
             .allocated_usd_micros
@@ -347,6 +364,7 @@ impl OusdReserveController {
         env.storage()
             .instance()
             .set(&DataKey::BurnableUsdMicros, &next_burnable);
+        env.storage().instance().set(&evidence_key, &true);
         Self::write_reserve(&env, &reserve);
         Self::write_liability(&env, &liability);
         env.events().publish(
