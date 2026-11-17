@@ -473,13 +473,15 @@ mod tests {
             &100_000,
         );
         client.request_redemption(&beneficiary, &second_liability);
-        assert!(client
-            .try_confirm_settled_payout(
-                &payout_verifier,
-                &second_liability,
-                &payout_hash,
-                &100_000,
-            )
-            .is_err());
+        assert!(
+            client
+                .try_confirm_settled_payout(
+                    &payout_verifier,
+                    &second_liability,
+                    &payout_hash,
+                    &100_000,
+                )
+                .is_err()
+        );
     }
 }
