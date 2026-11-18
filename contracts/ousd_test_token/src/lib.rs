@@ -33,6 +33,7 @@ enum DataKey {
     TotalSupply,
     Balance(Address),
     Allowance(Address, Address),
+    Minter(Address),
 }
 
 #[contracttype]
@@ -129,8 +130,32 @@ impl OusdTestToken {
         Ok(())
     }
 
-    pub fn mint(env: Env, admin: Address, to: Address, amount: i128) -> Result<(), Error> {
+    pub fn set_minter(
+        env: Env,
+        admin: Address,
+        minter: Address,
+        enabled: bool,
+    ) -> Result<(), Error> {
         Self::require_admin(&env, &admin)?;
+        let key = DataKey::Minter(minter.clone());
+        if enabled {
+            env.storage().instance().set(&key, &true);
+        } else {
+            env.storage().instance().remove(&key);
+        }
+        env.events().publish(
+            (symbol_short!("ousd"), symbol_short!("minter")),
+            (minter, enabled),
+        );
+        Ok(())
+    }
+
+    pub fn mint(env: Env, minter: Address, to: Address, amount: i128) -> Result<(), Error> {
+        minter.require_auth();
+        Self::require_initialized(&env)?;
+        if !env.storage().instance().get::<_, bool>(&DataKey::Minter(minter.clone())).unwrap_or(false) {
+            return Err(Error::Unauthorized);
+        }
         if amount <= 0 {
             return Err(Error::InvalidAmount);
         }
@@ -311,6 +336,7 @@ mod test {
         let bob = Address::generate(&env);
         let client = OusdTestTokenClient::new(&env, &id);
         client.initialize(&admin);
+        client.set_minter(&admin, &admin, &true);
         (env, id, admin, alice, bob)
     }
 
