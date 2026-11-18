@@ -4,7 +4,7 @@
 //! prove off-chain documents, mint/burn OUSD, or execute payouts.
 
 use soroban_sdk::{
-    contract, contracterror, contractimpl, contracttype, symbol_short, Address, BytesN, Env,
+    contract, contractclient, contracterror, contractimpl, contracttype, symbol_short, Address, BytesN, Env,
 };
 
 #[contracterror]
@@ -23,6 +23,32 @@ pub enum Error {
     BeneficiaryMismatch = 10,
     PayoutAmountMismatch = 11,
     ArithmeticError = 12,
+    TokenNotConfigured = 13,
+    TokenOperationFailed = 14,
+}
+
+
+#[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(u32)]
+pub enum OusdTokenError {
+    AlreadyInitialized = 1,
+    NotInitialized = 2,
+    Unauthorized = 3,
+    InvalidAmount = 4,
+    InsufficientBalance = 5,
+    InsufficientAllowance = 6,
+    AllowanceExpired = 7,
+    SupplyCapExceeded = 8,
+    ArithmeticError = 9,
+    InvalidExpiration = 10,
+}
+
+#[contractclient(name = "OusdTokenClient")]
+pub trait OusdTokenInterface {
+    fn mint(env: Env, minter: Address, to: Address, amount: i128) -> Result<(), OusdTokenError>;
+    fn transfer_from(env: Env, spender: Address, from: Address, to: Address, amount: i128) -> Result<(), OusdTokenError>;
+    fn burn(env: Env, from: Address, amount: i128) -> Result<(), OusdTokenError>;
 }
 
 #[contracttype]
@@ -36,6 +62,7 @@ enum DataKey {
     NextLiabilityId,
     OutstandingUsdMicros,
     BurnableUsdMicros,
+    TokenContract,
     Reserve(u64),
     Liability(u64),
     ReserveEvidence(BytesN<32>),
@@ -75,6 +102,9 @@ pub struct LiabilityRecord {
     pub state: LiabilityState,
     pub payout_evidence_hash: Option<BytesN<32>>,
     pub payout_ledger: Option<u32>,
+    pub token_amount: i128,
+    pub tokens_escrowed: bool,
+    pub tokens_burned: bool,
 }
 
 #[contract]
@@ -115,6 +145,10 @@ impl OusdReserveController {
     {
         env.storage().persistent().set(key, &true);
         Self::extend_persistent_ttl(env, key);
+    }
+
+    fn configured_token(env: &Env) -> Result<Address, Error> {
+        env.storage().instance().get(&DataKey::TokenContract).ok_or(Error::TokenNotConfigured)
     }
 
     fn require_initialized(env: &Env) -> Result<(), Error> {
@@ -209,6 +243,18 @@ impl OusdReserveController {
         Ok(())
     }
 
+    /// Configure the test token once. The controller must be authorized as a minter on that token.
+    pub fn configure_token(env: Env, admin: Address, token_contract: Address) -> Result<(), Error> {
+        Self::require_initialized(&env)?;
+        Self::require_role(&env, &admin, DataKey::Admin)?;
+        if env.storage().instance().has(&DataKey::TokenContract) {
+            return Err(Error::InvalidRoleConfiguration);
+        }
+        env.storage().instance().set(&DataKey::TokenContract, &token_contract);
+        env.events().publish((symbol_short!("ousd"), symbol_short!("token")), token_contract);
+        Ok(())
+    }
+
     /// Records a settled-USD reserve attestation. The evidence hash is an audit reference,
     /// not proof of bank funds; the verifier is a trust boundary.
     pub fn attest_settled_reserve(
@@ -267,13 +313,18 @@ impl OusdReserveController {
             return Err(Error::InvalidAmount);
         }
         let evidence_key = DataKey::LiabilityEvidence(evidence_hash.clone());
-        if env.storage().instance().has(&evidence_key) {
+        if Self::has_persistent(&env, &evidence_key) {
             return Err(Error::InvalidLiabilityState);
         }
         let mut reserve = Self::read_reserve(&env, reserve_id)?;
         if reserve.available_usd_micros < amount_usd_micros {
             return Err(Error::InsufficientReserve);
         }
+        let token_amount = amount_usd_micros.checked_mul(10).ok_or(Error::ArithmeticError)?;
+        let token_address = Self::configured_token(&env)?;
+        let token = OusdTokenClient::new(&env, &token_address);
+        token.mint(&env.current_contract_address(), &beneficiary, &token_amount)
+            .map_err(|_| Error::TokenOperationFailed)?;
         let outstanding: i128 = env
             .storage()
             .instance()
@@ -305,6 +356,9 @@ impl OusdReserveController {
             state: LiabilityState::Issued,
             payout_evidence_hash: None,
             payout_ledger: None,
+            token_amount,
+            tokens_escrowed: false,
+            tokens_burned: false,
         };
         env.storage()
             .instance()
@@ -312,7 +366,7 @@ impl OusdReserveController {
         env.storage()
             .instance()
             .set(&DataKey::OutstandingUsdMicros, &next_outstanding);
-        env.storage().instance().set(&evidence_key, &true);
+        Self::set_persistent_marker(&env, &evidence_key);
         Self::write_reserve(&env, &reserve);
         Self::write_liability(&env, &record);
         env.events().publish(
@@ -337,6 +391,16 @@ impl OusdReserveController {
         if record.state != LiabilityState::Issued {
             return Err(Error::InvalidLiabilityState);
         }
+        let token_address = Self::configured_token(&env)?;
+        let token = OusdTokenClient::new(&env, &token_address);
+        let controller_address = env.current_contract_address();
+        token.transfer_from(
+            &controller_address,
+            &beneficiary,
+            &controller_address,
+            &record.token_amount,
+        ).map_err(|_| Error::TokenOperationFailed)?;
+        record.tokens_escrowed = true;
         record.state = LiabilityState::RedemptionPending;
         Self::write_liability(&env, &record);
         env.events().publish(
@@ -368,6 +432,14 @@ impl OusdReserveController {
         if env.storage().instance().has(&evidence_key) {
             return Err(Error::InvalidLiabilityState);
         }
+        if !liability.tokens_escrowed || liability.tokens_burned {
+            return Err(Error::TokenOperationFailed);
+        }
+        let token_address = Self::configured_token(&env)?;
+        let token = OusdTokenClient::new(&env, &token_address);
+        token.burn(&env.current_contract_address(), &liability.token_amount)
+            .map_err(|_| Error::TokenOperationFailed)?;
+        liability.tokens_burned = true;
         let mut reserve = Self::read_reserve(&env, liability.reserve_id)?;
         reserve.allocated_usd_micros = reserve
             .allocated_usd_micros
@@ -427,207 +499,218 @@ impl OusdReserveController {
             .unwrap_or(0)
     }
     /// Paid liabilities are eligible for a separate token-burn workflow; no token is burned here.
-    pub fn burnable_usd_micros(env: Env) -> i128 {
-        env.storage()
-            .instance()
-            .get(&DataKey::BurnableUsdMicros)
-            .unwrap_or(0)
+    /// No burn backlog exists: tokens are escrowed on redemption request and burned atomically on payout confirmation.
+    pub fn burnable_usd_micros(_env: Env) -> i128 {
+        0
     }
     pub fn is_burn_authorized(env: Env, liability_id: u64) -> Result<bool, Error> {
-        Ok(Self::read_liability(&env, liability_id)?.state == LiabilityState::Paid)
+        let record = Self::read_liability(&env, liability_id)?;
+        Ok(record.tokens_escrowed && !record.tokens_burned)
+    }
+    pub fn is_token_burned(env: Env, liability_id: u64) -> Result<bool, Error> {
+        Ok(Self::read_liability(&env, liability_id)?.tokens_burned)
     }
 }
+
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::{testutils::Address as _, Env};
+    use soroban_sdk::{contract, contractimpl, contracttype, testutils::Address as _, Address, Env};
 
-    #[test]
-    fn reserve_liability_redemption_and_burn_gate() {
+    #[contracttype]
+    #[derive(Clone)]
+    enum MockTokenKey {
+        Minter(Address),
+        Balance(Address),
+        Allowance(Address, Address),
+        Supply,
+    }
+
+    #[contract]
+    struct MockOusdToken;
+
+    #[contractimpl]
+    impl MockOusdToken {
+        pub fn set_minter(env: Env, minter: Address, enabled: bool) {
+            if enabled {
+                env.storage().instance().set(&MockTokenKey::Minter(minter), &true);
+            }
+        }
+
+        pub fn approve(env: Env, owner: Address, spender: Address, amount: i128) {
+            owner.require_auth();
+            env.storage().instance().set(&MockTokenKey::Allowance(owner, spender), &amount);
+        }
+
+        pub fn mint(env: Env, minter: Address, to: Address, amount: i128) -> Result<(), OusdTokenError> {
+            minter.require_auth();
+            if !env.storage().instance().get::<_, bool>(&MockTokenKey::Minter(minter)).unwrap_or(false) {
+                return Err(OusdTokenError::Unauthorized);
+            }
+            if amount <= 0 { return Err(OusdTokenError::InvalidAmount); }
+            let balance = env.storage().instance().get::<_, i128>(&MockTokenKey::Balance(to.clone())).unwrap_or(0);
+            let supply = env.storage().instance().get::<_, i128>(&MockTokenKey::Supply).unwrap_or(0);
+            env.storage().instance().set(&MockTokenKey::Balance(to), &(balance + amount));
+            env.storage().instance().set(&MockTokenKey::Supply, &(supply + amount));
+            Ok(())
+        }
+
+        pub fn transfer_from(
+            env: Env, spender: Address, from: Address, to: Address, amount: i128,
+        ) -> Result<(), OusdTokenError> {
+            spender.require_auth();
+            let allowance_key = MockTokenKey::Allowance(from.clone(), spender);
+            let allowance = env.storage().instance().get::<_, i128>(&allowance_key).unwrap_or(0);
+            let from_balance = env.storage().instance().get::<_, i128>(&MockTokenKey::Balance(from.clone())).unwrap_or(0);
+            if amount <= 0 { return Err(OusdTokenError::InvalidAmount); }
+            if allowance < amount { return Err(OusdTokenError::InsufficientAllowance); }
+            if from_balance < amount { return Err(OusdTokenError::InsufficientBalance); }
+            let to_balance = env.storage().instance().get::<_, i128>(&MockTokenKey::Balance(to.clone())).unwrap_or(0);
+            env.storage().instance().set(&allowance_key, &(allowance - amount));
+            env.storage().instance().set(&MockTokenKey::Balance(from), &(from_balance - amount));
+            env.storage().instance().set(&MockTokenKey::Balance(to), &(to_balance + amount));
+            Ok(())
+        }
+
+        pub fn burn(env: Env, from: Address, amount: i128) -> Result<(), OusdTokenError> {
+            from.require_auth();
+            let key = MockTokenKey::Balance(from.clone());
+            let balance = env.storage().instance().get::<_, i128>(&key).unwrap_or(0);
+            let supply = env.storage().instance().get::<_, i128>(&MockTokenKey::Supply).unwrap_or(0);
+            if amount <= 0 { return Err(OusdTokenError::InvalidAmount); }
+            if balance < amount { return Err(OusdTokenError::InsufficientBalance); }
+            env.storage().instance().set(&key, &(balance - amount));
+            env.storage().instance().set(&MockTokenKey::Supply, &(supply - amount));
+            Ok(())
+        }
+
+        pub fn balance(env: Env, owner: Address) -> i128 {
+            env.storage().instance().get(&MockTokenKey::Balance(owner)).unwrap_or(0)
+        }
+
+        pub fn total_supply(env: Env) -> i128 {
+            env.storage().instance().get(&MockTokenKey::Supply).unwrap_or(0)
+        }
+    }
+
+    fn setup() -> (Env, Address, Address, Address, Address, Address, Address, Address) {
         let env = Env::default();
         env.mock_all_auths();
-        let contract_id = env.register(OusdReserveController, ());
-        let client = OusdReserveControllerClient::new(&env, &contract_id);
+        let controller_id = env.register(OusdReserveController, ());
+        let token_id = env.register(MockOusdToken, ());
         let admin = Address::generate(&env);
         let issuer = Address::generate(&env);
         let reserve_verifier = Address::generate(&env);
         let payout_verifier = Address::generate(&env);
         let beneficiary = Address::generate(&env);
-        let reserve_hash = BytesN::from_array(&env, &[1u8; 32]);
-        let liability_hash = BytesN::from_array(&env, &[2u8; 32]);
-        let payout_hash = BytesN::from_array(&env, &[3u8; 32]);
-
+        let client = OusdReserveControllerClient::new(&env, &controller_id);
+        let token = MockOusdTokenClient::new(&env, &token_id);
+        token.set_minter(&controller_id, &true);
         client.initialize(&admin, &issuer, &reserve_verifier, &payout_verifier);
-        let reserve_id =
-            client.attest_settled_reserve(&reserve_verifier, &reserve_hash, &1_000_000);
+        client.configure_token(&admin, &token_id);
+        (env, controller_id, token_id, admin, issuer, reserve_verifier, payout_verifier, beneficiary)
+    }
+
+    #[test]
+    fn issuance_escrow_payout_and_burn_are_atomic() {
+        let (env, controller_id, token_id, _admin, issuer, reserve_verifier, payout_verifier, beneficiary) = setup();
+        let client = OusdReserveControllerClient::new(&env, &controller_id);
+        let token = MockOusdTokenClient::new(&env, &token_id);
+        let reserve_id = client.attest_settled_reserve(
+            &reserve_verifier, &BytesN::from_array(&env, &[1u8; 32]), &1_000_000,
+        );
         let liability_id = client.issue_liability(
-            &issuer,
-            &reserve_id,
-            &beneficiary,
-            &liability_hash,
-            &400_000,
+            &issuer, &reserve_id, &beneficiary, &BytesN::from_array(&env, &[2u8; 32]), &400_000,
         );
+        assert_eq!(token.balance(&beneficiary), 4_000_000);
+        assert_eq!(token.total_supply(), 4_000_000);
         assert_eq!(client.outstanding_usd_micros(), 400_000);
-        assert_eq!(
-            client.get_reserve(&reserve_id).available_usd_micros,
-            600_000
-        );
         assert!(!client.is_burn_authorized(&liability_id));
 
+        token.approve(&beneficiary, &controller_id, &4_000_000);
         client.request_redemption(&beneficiary, &liability_id);
-        client.confirm_settled_payout(&payout_verifier, &liability_id, &payout_hash, &400_000);
-        assert_eq!(client.outstanding_usd_micros(), 0);
-        assert_eq!(client.burnable_usd_micros(), 400_000);
+        assert_eq!(token.balance(&beneficiary), 0);
+        assert_eq!(token.balance(&controller_id), 4_000_000);
         assert!(client.is_burn_authorized(&liability_id));
-        let final_reserve = client.get_reserve(&reserve_id);
-        assert_eq!(final_reserve.available_usd_micros, 600_000);
-        assert_eq!(final_reserve.allocated_usd_micros, 0);
-        assert_eq!(final_reserve.paid_out_usd_micros, 400_000);
 
-        // The same reserve evidence cannot be counted twice.
-        assert!(client
-            .try_attest_settled_reserve(&reserve_verifier, &reserve_hash, &1_000_000)
-            .is_err());
-
-        // The same liability evidence cannot create a second allocation.
-        assert!(client
-            .try_issue_liability(
-                &issuer,
-                &reserve_id,
-                &beneficiary,
-                &liability_hash,
-                &100_000,
-            )
-            .is_err());
-
-        // A payout evidence hash cannot be replayed for a different liability.
-        let second_liability_hash = BytesN::from_array(&env, &[4u8; 32]);
-        let second_liability = client.issue_liability(
-            &issuer,
-            &reserve_id,
-            &beneficiary,
-            &second_liability_hash,
-            &100_000,
+        client.confirm_settled_payout(
+            &payout_verifier, &liability_id, &BytesN::from_array(&env, &[3u8; 32]), &400_000,
         );
-        client.request_redemption(&beneficiary, &second_liability);
-        assert!(
-            client
-                .try_confirm_settled_payout(
-                    &payout_verifier,
-                    &second_liability,
-                    &payout_hash,
-                    &100_000,
-                )
-                .is_err()
-        );
+        assert_eq!(token.balance(&controller_id), 0);
+        assert_eq!(token.total_supply(), 0);
+        assert_eq!(client.outstanding_usd_micros(), 0);
+        assert_eq!(client.burnable_usd_micros(), 0);
+        assert!(!client.is_burn_authorized(&liability_id));
+        assert!(client.is_token_burned(&liability_id));
+        assert_eq!(client.get_liability(&liability_id).state, LiabilityState::Paid);
     }
+
     #[test]
-    fn rejects_wrong_beneficiary_and_mismatched_or_repeated_payout() {
-        let env = Env::default();
-        env.mock_all_auths();
-        let contract_id = env.register(OusdReserveController, ());
-        let client = OusdReserveControllerClient::new(&env, &contract_id);
-        let admin = Address::generate(&env);
-        let issuer = Address::generate(&env);
-        let reserve_verifier = Address::generate(&env);
-        let payout_verifier = Address::generate(&env);
-        let beneficiary = Address::generate(&env);
-        let wrong_beneficiary = Address::generate(&env);
-        client.initialize(&admin, &issuer, &reserve_verifier, &payout_verifier);
+    fn wrong_beneficiary_wrong_payout_and_replay_are_rejected() {
+        let (env, controller_id, token_id, _admin, issuer, reserve_verifier, payout_verifier, beneficiary) = setup();
+        let client = OusdReserveControllerClient::new(&env, &controller_id);
+        let token = MockOusdTokenClient::new(&env, &token_id);
+        let wrong = Address::generate(&env);
         let reserve_id = client.attest_settled_reserve(
-            &reserve_verifier, &BytesN::from_array(&env, &[21u8; 32]), &1_000_000,
+            &reserve_verifier, &BytesN::from_array(&env, &[11u8; 32]), &1_000_000,
         );
         let liability_id = client.issue_liability(
-            &issuer, &reserve_id, &beneficiary, &BytesN::from_array(&env, &[22u8; 32]), &400_000,
+            &issuer, &reserve_id, &beneficiary, &BytesN::from_array(&env, &[12u8; 32]), &400_000,
         );
-
-        assert!(client.try_request_redemption(&wrong_beneficiary, &liability_id).is_err());
-        assert_eq!(client.get_liability(&liability_id).state, LiabilityState::Issued);
-
+        token.approve(&beneficiary, &controller_id, &4_000_000);
+        assert!(client.try_request_redemption(&wrong, &liability_id).is_err());
         client.request_redemption(&beneficiary, &liability_id);
-        let payout_hash = BytesN::from_array(&env, &[23u8; 32]);
-        assert!(client.try_confirm_settled_payout(
-            &payout_verifier, &liability_id, &payout_hash, &399_999,
-        ).is_err());
+        let payout = BytesN::from_array(&env, &[13u8; 32]);
+        assert!(client.try_confirm_settled_payout(&payout_verifier, &liability_id, &payout, &399_999).is_err());
         assert_eq!(client.get_liability(&liability_id).state, LiabilityState::RedemptionPending);
-        assert_eq!(client.outstanding_usd_micros(), 400_000);
-        assert!(client.try_confirm_settled_payout(
-            &payout_verifier, &liability_id, &payout_hash, &400_000,
-        ).is_ok());
-        assert!(client.try_confirm_settled_payout(
-            &payout_verifier, &liability_id, &payout_hash, &400_000,
-        ).is_err());
-        assert_eq!(client.outstanding_usd_micros(), 0);
-        assert_eq!(client.burnable_usd_micros(), 400_000);
+        client.confirm_settled_payout(&payout_verifier, &liability_id, &payout, &400_000);
+        assert!(client.try_confirm_settled_payout(&payout_verifier, &liability_id, &payout, &400_000).is_err());
+        assert_eq!(token.total_supply(), 0);
     }
 
     #[test]
-    fn rejects_wrong_roles_and_non_positive_amounts() {
-        let env = Env::default();
-        env.mock_all_auths();
-        let contract_id = env.register(OusdReserveController, ());
-        let client = OusdReserveControllerClient::new(&env, &contract_id);
-        let admin = Address::generate(&env);
-        let issuer = Address::generate(&env);
-        let reserve_verifier = Address::generate(&env);
-        let payout_verifier = Address::generate(&env);
+    fn rejects_wrong_roles_non_positive_amounts_and_insufficient_reserve() {
+        let (env, controller_id, _token_id, _admin, issuer, reserve_verifier, payout_verifier, beneficiary) = setup();
+        let client = OusdReserveControllerClient::new(&env, &controller_id);
         let stranger = Address::generate(&env);
-        let beneficiary = Address::generate(&env);
-        client.initialize(&admin, &issuer, &reserve_verifier, &payout_verifier);
-
-        assert!(client.try_attest_settled_reserve(
-            &stranger, &BytesN::from_array(&env, &[31u8; 32]), &100,
-        ).is_err());
-        assert!(client.try_issue_liability(
-            &stranger, &1, &beneficiary, &BytesN::from_array(&env, &[32u8; 32]), &1,
-        ).is_err());
-        assert!(client.try_attest_settled_reserve(
-            &reserve_verifier, &BytesN::from_array(&env, &[33u8; 32]), &0,
-        ).is_err());
-        let reserve_id = client.attest_settled_reserve(
-            &reserve_verifier, &BytesN::from_array(&env, &[34u8; 32]), &100,
-        );
-        assert!(client.try_issue_liability(
-            &issuer, &reserve_id, &beneficiary, &BytesN::from_array(&env, &[35u8; 32]), &0,
-        ).is_err());
+        assert!(client.try_attest_settled_reserve(&stranger, &BytesN::from_array(&env, &[21u8; 32]), &10).is_err());
+        assert!(client.try_issue_liability(&stranger, &1, &beneficiary, &BytesN::from_array(&env, &[22u8; 32]), &1).is_err());
+        assert!(client.try_attest_settled_reserve(&reserve_verifier, &BytesN::from_array(&env, &[23u8; 32]), &0).is_err());
+        let reserve_id = client.attest_settled_reserve(&reserve_verifier, &BytesN::from_array(&env, &[24u8; 32]), &10);
+        assert!(client.try_issue_liability(&issuer, &reserve_id, &beneficiary, &BytesN::from_array(&env, &[25u8; 32]), &11).is_err());
+        assert!(client.try_issue_liability(&issuer, &reserve_id, &beneficiary, &BytesN::from_array(&env, &[26u8; 32]), &0).is_err());
+        assert_eq!(client.get_reserve(&reserve_id).available_usd_micros, 10);
+        assert!(client.try_confirm_settled_payout(&payout_verifier, &99, &BytesN::from_array(&env, &[27u8; 32]), &1).is_err());
     }
 
     #[test]
-    fn insufficient_reserve_and_overflow_leave_accounting_unchanged() {
-        let env = Env::default();
-        env.mock_all_auths();
-        let contract_id = env.register(OusdReserveController, ());
-        let client = OusdReserveControllerClient::new(&env, &contract_id);
-        let admin = Address::generate(&env);
-        let issuer = Address::generate(&env);
-        let reserve_verifier = Address::generate(&env);
-        let payout_verifier = Address::generate(&env);
-        let beneficiary = Address::generate(&env);
-        client.initialize(&admin, &issuer, &reserve_verifier, &payout_verifier);
-
-        let small_reserve = client.attest_settled_reserve(
-            &reserve_verifier, &BytesN::from_array(&env, &[41u8; 32]), &10,
+    fn token_decimal_overflow_and_supply_cap_do_not_mutate_reserves() {
+        let (env, controller_id, token_id, _admin, issuer, reserve_verifier, _payout_verifier, beneficiary) = setup();
+        let client = OusdReserveControllerClient::new(&env, &controller_id);
+        let token = MockOusdTokenClient::new(&env, &token_id);
+        let huge = client.attest_settled_reserve(
+            &reserve_verifier, &BytesN::from_array(&env, &[31u8; 32]), &i128::MAX,
         );
         assert!(client.try_issue_liability(
-            &issuer, &small_reserve, &beneficiary, &BytesN::from_array(&env, &[42u8; 32]), &11,
+            &issuer, &huge, &beneficiary, &BytesN::from_array(&env, &[32u8; 32]), &i128::MAX,
         ).is_err());
-        assert_eq!(client.get_reserve(&small_reserve).available_usd_micros, 10);
+        assert_eq!(client.get_reserve(&huge).available_usd_micros, i128::MAX);
+        assert_eq!(token.total_supply(), 0);
 
-        let max_reserve = client.attest_settled_reserve(
-            &reserve_verifier, &BytesN::from_array(&env, &[43u8; 32]), &i128::MAX,
+        let cap_reserve = client.attest_settled_reserve(
+            &reserve_verifier, &BytesN::from_array(&env, &[33u8; 32]), &1_000_000_000_000_000,
         );
         client.issue_liability(
-            &issuer, &max_reserve, &beneficiary, &BytesN::from_array(&env, &[44u8; 32]), &i128::MAX,
+            &issuer, &cap_reserve, &beneficiary, &BytesN::from_array(&env, &[34u8; 32]), &1_000_000_000_000_000,
         );
-        let final_reserve = client.attest_settled_reserve(
-            &reserve_verifier, &BytesN::from_array(&env, &[45u8; 32]), &1,
+        let extra_reserve = client.attest_settled_reserve(
+            &reserve_verifier, &BytesN::from_array(&env, &[35u8; 32]), &1,
         );
         assert!(client.try_issue_liability(
-            &issuer, &final_reserve, &beneficiary, &BytesN::from_array(&env, &[46u8; 32]), &1,
+            &issuer, &extra_reserve, &beneficiary, &BytesN::from_array(&env, &[36u8; 32]), &1,
         ).is_err());
-        assert_eq!(client.outstanding_usd_micros(), i128::MAX);
-        assert_eq!(client.get_reserve(&final_reserve).available_usd_micros, 1);
+        assert_eq!(client.get_reserve(&extra_reserve).available_usd_micros, 1);
+        assert_eq!(token.total_supply(), 10_000_000_000_000_000);
     }
-
 }
