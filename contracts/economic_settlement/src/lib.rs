@@ -339,4 +339,125 @@ mod test {
         client.approve_period(&admin, &period_id);
         client.settle_period(&operator, &period_id, &digest);
     }
+
+    #[test]
+    fn underfunded_period_is_rejected_without_creating_state() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(EconomicSettlement, ());
+        let client = EconomicSettlementClient::new(&env, &contract_id);
+        let admin = Address::generate(&env);
+        let operator = Address::generate(&env);
+        let period_id = BytesN::from_array(&env, &[21u8; 32]);
+        let digest = BytesN::from_array(&env, &[22u8; 32]);
+
+        client.initialize(&admin);
+        client.set_operator(&operator, &true);
+        assert!(matches!(
+            client.try_propose_period(
+                &operator,
+                &period_id,
+                &String::from_str(&env, "PI-TEST"),
+                &100,
+                &101,
+                &1,
+                &digest,
+            ),
+            Err(Ok(Error::UnderfundedPeriod))
+        ));
+        assert!(matches!(
+            client.try_get_period(&period_id),
+            Err(Ok(Error::PeriodNotFound))
+        ));
+    }
+
+    #[test]
+    fn rejects_unregistered_operator_and_duplicate_period() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(EconomicSettlement, ());
+        let client = EconomicSettlementClient::new(&env, &contract_id);
+        let admin = Address::generate(&env);
+        let operator = Address::generate(&env);
+        let unregistered = Address::generate(&env);
+        let period_id = BytesN::from_array(&env, &[31u8; 32]);
+        let digest = BytesN::from_array(&env, &[32u8; 32]);
+
+        client.initialize(&admin);
+        client.set_operator(&operator, &true);
+        assert!(matches!(
+            client.try_propose_period(
+                &unregistered,
+                &period_id,
+                &String::from_str(&env, "PI-TEST"),
+                &100,
+                &0,
+                &1,
+                &digest,
+            ),
+            Err(Ok(Error::Unauthorized))
+        ));
+
+        client.propose_period(
+            &operator,
+            &period_id,
+            &String::from_str(&env, "PI-TEST"),
+            &100,
+            &0,
+            &1,
+            &digest,
+        );
+        assert!(matches!(
+            client.try_propose_period(
+                &operator,
+                &period_id,
+                &String::from_str(&env, "PI-TEST"),
+                &100,
+                &0,
+                &1,
+                &digest,
+            ),
+            Err(Ok(Error::DuplicatePeriod))
+        ));
+    }
+
+    #[test]
+    fn settlement_is_single_use_and_requires_the_configured_admin() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(EconomicSettlement, ());
+        let client = EconomicSettlementClient::new(&env, &contract_id);
+        let admin = Address::generate(&env);
+        let wrong_admin = Address::generate(&env);
+        let operator = Address::generate(&env);
+        let participant = Address::generate(&env);
+        let period_id = BytesN::from_array(&env, &[41u8; 32]);
+        let input_digest = BytesN::from_array(&env, &[42u8; 32]);
+        let evidence = BytesN::from_array(&env, &[43u8; 32]);
+        let settlement_digest = BytesN::from_array(&env, &[44u8; 32]);
+
+        client.initialize(&admin);
+        client.set_operator(&operator, &true);
+        client.propose_period(
+            &operator,
+            &period_id,
+            &String::from_str(&env, "PI-TEST"),
+            &100,
+            &20,
+            &1,
+            &input_digest,
+        );
+        assert!(matches!(
+            client.try_approve_period(&wrong_admin, &period_id),
+            Err(Ok(Error::Unauthorized))
+        ));
+        client.approve_period(&admin, &period_id);
+        client.record_allocation(&operator, &period_id, &participant, &80, &evidence);
+        client.settle_period(&operator, &period_id, &settlement_digest);
+        assert!(matches!(
+            client.try_settle_period(&operator, &period_id, &settlement_digest),
+            Err(Ok(Error::AlreadySettled))
+        ));
+    }
+
 }
