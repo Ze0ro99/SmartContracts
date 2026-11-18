@@ -33,6 +33,7 @@ enum DataKey {
     TotalSupply,
     Balance(Address),
     Allowance(Address, Address),
+    Minter(Address),
 }
 
 #[contracttype]
@@ -47,7 +48,9 @@ pub struct OusdTestToken;
 
 impl OusdTestToken {
     fn require_initialized(env: &Env) -> Result<Address, Error> {
-        env.storage().instance().extend_ttl(TTL_THRESHOLD, env.storage().max_ttl());
+        env.storage()
+            .instance()
+            .extend_ttl(TTL_THRESHOLD, env.storage().max_ttl());
         env.storage()
             .instance()
             .get(&DataKey::Admin)
@@ -103,8 +106,12 @@ impl OusdTestToken {
             return Ok(());
         }
         let to_balance = Self::balance_of(env, to);
-        let next_to = to_balance.checked_add(amount).ok_or(Error::ArithmeticError)?;
-        let next_from = from_balance.checked_sub(amount).ok_or(Error::ArithmeticError)?;
+        let next_to = to_balance
+            .checked_add(amount)
+            .ok_or(Error::ArithmeticError)?;
+        let next_from = from_balance
+            .checked_sub(amount)
+            .ok_or(Error::ArithmeticError)?;
         Self::set_balance(env, from, next_from);
         Self::set_balance(env, to, next_to);
         env.events().publish(
@@ -123,14 +130,46 @@ impl OusdTestToken {
             return Err(Error::AlreadyInitialized);
         }
         env.storage().instance().set(&DataKey::Admin, &admin);
-        env.storage().instance().extend_ttl(TTL_THRESHOLD, env.storage().max_ttl());
+        env.storage()
+            .instance()
+            .extend_ttl(TTL_THRESHOLD, env.storage().max_ttl());
         Self::set_total_supply(&env, 0);
-        env.events().publish((symbol_short!("ousd"), symbol_short!("init")), admin);
+        env.events()
+            .publish((symbol_short!("ousd"), symbol_short!("init")), admin);
         Ok(())
     }
 
-    pub fn mint(env: Env, admin: Address, to: Address, amount: i128) -> Result<(), Error> {
+    pub fn set_minter(
+        env: Env,
+        admin: Address,
+        minter: Address,
+        enabled: bool,
+    ) -> Result<(), Error> {
         Self::require_admin(&env, &admin)?;
+        let key = DataKey::Minter(minter.clone());
+        if enabled {
+            env.storage().instance().set(&key, &true);
+        } else {
+            env.storage().instance().remove(&key);
+        }
+        env.events().publish(
+            (symbol_short!("ousd"), symbol_short!("minter")),
+            (minter, enabled),
+        );
+        Ok(())
+    }
+
+    pub fn mint(env: Env, minter: Address, to: Address, amount: i128) -> Result<(), Error> {
+        minter.require_auth();
+        Self::require_initialized(&env)?;
+        if !env
+            .storage()
+            .instance()
+            .get::<_, bool>(&DataKey::Minter(minter.clone()))
+            .unwrap_or(false)
+        {
+            return Err(Error::Unauthorized);
+        }
         if amount <= 0 {
             return Err(Error::InvalidAmount);
         }
@@ -143,7 +182,8 @@ impl OusdTestToken {
         let next_balance = balance.checked_add(amount).ok_or(Error::ArithmeticError)?;
         Self::set_total_supply(&env, next_supply);
         Self::set_balance(&env, &to, next_balance);
-        env.events().publish((symbol_short!("ousd"), symbol_short!("mint")), (to, amount));
+        env.events()
+            .publish((symbol_short!("ousd"), symbol_short!("mint")), (to, amount));
         Ok(())
     }
 
@@ -168,7 +208,10 @@ impl OusdTestToken {
         if expiration_ledger <= env.ledger().sequence() {
             return Err(Error::InvalidExpiration);
         }
-        let value = AllowanceData { amount, expiration_ledger };
+        let value = AllowanceData {
+            amount,
+            expiration_ledger,
+        };
         let allowance_key = DataKey::Allowance(from.clone(), spender.clone());
         let allowance_storage = env.storage().persistent();
         allowance_storage.set(&allowance_key, &value);
@@ -206,7 +249,11 @@ impl OusdTestToken {
             return Err(Error::InvalidAmount);
         }
         let key = DataKey::Allowance(from.clone(), spender.clone());
-        let mut value: AllowanceData = env.storage().persistent().get(&key).ok_or(Error::InsufficientAllowance)?;
+        let mut value: AllowanceData = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .ok_or(Error::InsufficientAllowance)?;
         if value.expiration_ledger < env.ledger().sequence() {
             return Err(Error::AllowanceExpired);
         }
@@ -214,7 +261,10 @@ impl OusdTestToken {
             return Err(Error::InsufficientAllowance);
         }
         Self::move_balance(&env, &from, &to, amount)?;
-        value.amount = value.amount.checked_sub(amount).ok_or(Error::ArithmeticError)?;
+        value.amount = value
+            .amount
+            .checked_sub(amount)
+            .ok_or(Error::ArithmeticError)?;
         let storage = env.storage().persistent();
         storage.set(&key, &value);
         storage.extend_ttl(&key, TTL_THRESHOLD, env.storage().max_ttl());
@@ -236,7 +286,10 @@ impl OusdTestToken {
         let next_supply = supply.checked_sub(amount).ok_or(Error::ArithmeticError)?;
         Self::set_balance(&env, &from, next_balance);
         Self::set_total_supply(&env, next_supply);
-        env.events().publish((symbol_short!("ousd"), symbol_short!("burn")), (from, amount));
+        env.events().publish(
+            (symbol_short!("ousd"), symbol_short!("burn")),
+            (from, amount),
+        );
         Ok(())
     }
 
@@ -247,7 +300,11 @@ impl OusdTestToken {
             return Err(Error::InvalidAmount);
         }
         let key = DataKey::Allowance(from.clone(), spender.clone());
-        let mut value: AllowanceData = env.storage().persistent().get(&key).ok_or(Error::InsufficientAllowance)?;
+        let mut value: AllowanceData = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .ok_or(Error::InsufficientAllowance)?;
         if value.expiration_ledger < env.ledger().sequence() {
             return Err(Error::AllowanceExpired);
         }
@@ -258,13 +315,23 @@ impl OusdTestToken {
         if balance < amount {
             return Err(Error::InsufficientBalance);
         }
-        value.amount = value.amount.checked_sub(amount).ok_or(Error::ArithmeticError)?;
+        value.amount = value
+            .amount
+            .checked_sub(amount)
+            .ok_or(Error::ArithmeticError)?;
         let next_balance = balance.checked_sub(amount).ok_or(Error::ArithmeticError)?;
-        let next_supply = Self::read_total_supply(&env).checked_sub(amount).ok_or(Error::ArithmeticError)?;
-        env.storage().persistent().set(&key, &value);
+        let next_supply = Self::read_total_supply(&env)
+            .checked_sub(amount)
+            .ok_or(Error::ArithmeticError)?;
+        let storage = env.storage().persistent();
+        storage.set(&key, &value);
+        storage.extend_ttl(&key, TTL_THRESHOLD, env.storage().max_ttl());
         Self::set_balance(&env, &from, next_balance);
         Self::set_total_supply(&env, next_supply);
-        env.events().publish((symbol_short!("ousd"), symbol_short!("burn")), (from, amount));
+        env.events().publish(
+            (symbol_short!("ousd"), symbol_short!("burn")),
+            (from, amount),
+        );
         Ok(())
     }
 
@@ -300,7 +367,10 @@ impl OusdTestToken {
 #[cfg(test)]
 mod test {
     use super::{OusdTestToken, OusdTestTokenClient, MAX_SUPPLY};
-    use soroban_sdk::{testutils::{Address as _, Ledger}, Address, Env, String};
+    use soroban_sdk::{
+        testutils::{Address as _, Ledger},
+        Address, Env, String,
+    };
 
     fn setup() -> (Env, Address, Address, Address, Address) {
         let env = Env::default();
@@ -311,6 +381,7 @@ mod test {
         let bob = Address::generate(&env);
         let client = OusdTestTokenClient::new(&env, &id);
         client.initialize(&admin);
+        client.set_minter(&admin, &admin, &true);
         (env, id, admin, alice, bob)
     }
 
@@ -353,7 +424,10 @@ mod test {
     fn mint_above_cap_and_negative_transfer_are_rejected() {
         let (env, id, admin, alice, bob) = setup();
         let client = OusdTestTokenClient::new(&env, &id);
-        assert!(matches!(client.try_mint(&admin, &alice, &(MAX_SUPPLY + 1)), Err(Ok(_))));
+        assert!(matches!(
+            client.try_mint(&admin, &alice, &(MAX_SUPPLY + 1)),
+            Err(Ok(_))
+        ));
         client.mint(&admin, &alice, &100);
         assert!(matches!(client.try_transfer(&alice, &bob, &-1), Err(Ok(_))));
     }
@@ -391,6 +465,9 @@ mod test {
         client.approve(&alice, &spender, &200, &(current + 1));
         env.ledger().set_sequence_number(current + 2);
         assert_eq!(client.allowance(&alice, &spender), 0);
-        assert!(matches!(client.try_transfer_from(&spender, &alice, &bob, &100), Err(Ok(_))));
+        assert!(matches!(
+            client.try_transfer_from(&spender, &alice, &bob, &100),
+            Err(Ok(_))
+        ));
     }
 }
