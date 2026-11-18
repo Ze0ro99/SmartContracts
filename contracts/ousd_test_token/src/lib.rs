@@ -286,7 +286,9 @@ impl OusdTestToken {
         value.amount = value.amount.checked_sub(amount).ok_or(Error::ArithmeticError)?;
         let next_balance = balance.checked_sub(amount).ok_or(Error::ArithmeticError)?;
         let next_supply = Self::read_total_supply(&env).checked_sub(amount).ok_or(Error::ArithmeticError)?;
-        env.storage().persistent().set(&key, &value);
+        let storage = env.storage().persistent();
+        storage.set(&key, &value);
+        storage.extend_ttl(&key, TTL_THRESHOLD, env.storage().max_ttl());
         Self::set_balance(&env, &from, next_balance);
         Self::set_total_supply(&env, next_supply);
         env.events().publish((symbol_short!("ousd"), symbol_short!("burn")), (from, amount));
