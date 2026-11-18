@@ -81,7 +81,44 @@ pub struct LiabilityRecord {
 pub struct OusdReserveController;
 
 impl OusdReserveController {
+    // Keep unbounded records and replay indexes out of the size-limited instance entry.
+    // Active persistent entries are extended to the network maximum whenever accessed.
+    // Expired entries require Soroban footprint restoration before the next contract call.
+    const TTL_THRESHOLD: u32 = 100_000;
+
+    fn extend_persistent_ttl<K>(env: &Env, key: &K)
+    where
+        K: soroban_sdk::IntoVal<Env, soroban_sdk::Val>,
+    {
+        env.storage().persistent().extend_ttl(
+            key,
+            Self::TTL_THRESHOLD,
+            env.storage().max_ttl(),
+        );
+    }
+
+    fn has_persistent<K>(env: &Env, key: &K) -> bool
+    where
+        K: soroban_sdk::IntoVal<Env, soroban_sdk::Val>,
+    {
+        let storage = env.storage().persistent();
+        let exists = storage.has(key);
+        if exists {
+            Self::extend_persistent_ttl(env, key);
+        }
+        exists
+    }
+
+    fn set_persistent_marker<K>(env: &Env, key: &K)
+    where
+        K: soroban_sdk::IntoVal<Env, soroban_sdk::Val>,
+    {
+        env.storage().persistent().set(key, &true);
+        Self::extend_persistent_ttl(env, key);
+    }
+
     fn require_initialized(env: &Env) -> Result<(), Error> {
+        env.storage().instance().extend_ttl(Self::TTL_THRESHOLD, env.storage().max_ttl());
         if env.storage().instance().has(&DataKey::Admin) {
             Ok(())
         } else {
@@ -102,26 +139,26 @@ impl OusdReserveController {
         }
     }
     fn read_reserve(env: &Env, id: u64) -> Result<ReserveRecord, Error> {
-        env.storage()
-            .instance()
-            .get(&DataKey::Reserve(id))
-            .ok_or(Error::UnknownReserve)
+        let key = DataKey::Reserve(id);
+        let record = env.storage().persistent().get(&key).ok_or(Error::UnknownReserve)?;
+        Self::extend_persistent_ttl(env, &key);
+        Ok(record)
     }
     fn write_reserve(env: &Env, record: &ReserveRecord) {
-        env.storage()
-            .instance()
-            .set(&DataKey::Reserve(record.id), record);
+        let key = DataKey::Reserve(record.id);
+        env.storage().persistent().set(&key, record);
+        Self::extend_persistent_ttl(env, &key);
     }
     fn read_liability(env: &Env, id: u64) -> Result<LiabilityRecord, Error> {
-        env.storage()
-            .instance()
-            .get(&DataKey::Liability(id))
-            .ok_or(Error::UnknownLiability)
+        let key = DataKey::Liability(id);
+        let record = env.storage().persistent().get(&key).ok_or(Error::UnknownLiability)?;
+        Self::extend_persistent_ttl(env, &key);
+        Ok(record)
     }
     fn write_liability(env: &Env, record: &LiabilityRecord) {
-        env.storage()
-            .instance()
-            .set(&DataKey::Liability(record.id), record);
+        let key = DataKey::Liability(record.id);
+        env.storage().persistent().set(&key, record);
+        Self::extend_persistent_ttl(env, &key);
     }
 }
 
@@ -166,6 +203,7 @@ impl OusdReserveController {
         env.storage()
             .instance()
             .set(&DataKey::BurnableUsdMicros, &0i128);
+        env.storage().instance().extend_ttl(Self::TTL_THRESHOLD, env.storage().max_ttl());
         env.events()
             .publish((symbol_short!("ousd"), symbol_short!("init")), admin);
         Ok(())
@@ -185,7 +223,7 @@ impl OusdReserveController {
             return Err(Error::InvalidAmount);
         }
         let evidence_key = DataKey::ReserveEvidence(evidence_hash.clone());
-        if env.storage().instance().has(&evidence_key) {
+        if Self::has_persistent(&env, &evidence_key) {
             return Err(Error::InvalidLiabilityState);
         }
         let id: u64 = env
@@ -205,7 +243,7 @@ impl OusdReserveController {
             attested_ledger: env.ledger().sequence(),
         };
         env.storage().instance().set(&DataKey::NextReserveId, &next);
-        env.storage().instance().set(&evidence_key, &true);
+        Self::set_persistent_marker(&env, &evidence_key);
         Self::write_reserve(&env, &record);
         env.events().publish(
             (symbol_short!("ousd"), symbol_short!("reserve")),
