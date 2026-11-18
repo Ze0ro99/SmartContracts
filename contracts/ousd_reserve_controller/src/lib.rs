@@ -267,7 +267,7 @@ impl OusdReserveController {
             return Err(Error::InvalidAmount);
         }
         let evidence_key = DataKey::LiabilityEvidence(evidence_hash.clone());
-        if env.storage().instance().has(&evidence_key) {
+        if Self::has_persistent(&env, &evidence_key) {
             return Err(Error::InvalidLiabilityState);
         }
         let mut reserve = Self::read_reserve(&env, reserve_id)?;
@@ -312,7 +312,7 @@ impl OusdReserveController {
         env.storage()
             .instance()
             .set(&DataKey::OutstandingUsdMicros, &next_outstanding);
-        env.storage().instance().set(&evidence_key, &true);
+        Self::set_persistent_marker(&env, &evidence_key);
         Self::write_reserve(&env, &reserve);
         Self::write_liability(&env, &record);
         env.events().publish(
@@ -365,7 +365,7 @@ impl OusdReserveController {
             return Err(Error::PayoutAmountMismatch);
         }
         let evidence_key = DataKey::PayoutEvidence(payout_evidence_hash.clone());
-        if env.storage().instance().has(&evidence_key) {
+        if Self::has_persistent(&env, &evidence_key) {
             return Err(Error::InvalidLiabilityState);
         }
         let mut reserve = Self::read_reserve(&env, liability.reserve_id)?;
@@ -402,7 +402,7 @@ impl OusdReserveController {
         env.storage()
             .instance()
             .set(&DataKey::BurnableUsdMicros, &next_burnable);
-        env.storage().instance().set(&evidence_key, &true);
+        Self::set_persistent_marker(&env, &evidence_key);
         Self::write_reserve(&env, &reserve);
         Self::write_liability(&env, &liability);
         env.events().publish(
