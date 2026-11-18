@@ -61,7 +61,6 @@ enum DataKey {
     NextReserveId,
     NextLiabilityId,
     OutstandingUsdMicros,
-    BurnableUsdMicros,
     TokenContract,
     Reserve(u64),
     Liability(u64),
@@ -298,7 +297,7 @@ impl OusdReserveController {
         Ok(id)
     }
 
-    /// Creates an off-chain liability record against a reserve allocation. Does NOT mint OUSD.
+    /// Issues test OUSD against a verifier-attested reserve; amount micros map to 7-decimal token units.
     pub fn issue_liability(
         env: Env,
         issuer: Address,
@@ -429,7 +428,7 @@ impl OusdReserveController {
             return Err(Error::PayoutAmountMismatch);
         }
         let evidence_key = DataKey::PayoutEvidence(payout_evidence_hash.clone());
-        if env.storage().instance().has(&evidence_key) {
+        if Self::has_persistent(&env, &evidence_key) {
             return Err(Error::InvalidLiabilityState);
         }
         if !liability.tokens_escrowed || liability.tokens_burned {
@@ -457,14 +456,6 @@ impl OusdReserveController {
         let next_outstanding = outstanding
             .checked_sub(liability.amount_usd_micros)
             .ok_or(Error::ArithmeticError)?;
-        let burnable: i128 = env
-            .storage()
-            .instance()
-            .get(&DataKey::BurnableUsdMicros)
-            .unwrap_or(0);
-        let next_burnable = burnable
-            .checked_add(liability.amount_usd_micros)
-            .ok_or(Error::ArithmeticError)?;
         liability.state = LiabilityState::Paid;
         liability.payout_evidence_hash = Some(payout_evidence_hash);
         liability.payout_ledger = Some(env.ledger().sequence());
@@ -474,7 +465,7 @@ impl OusdReserveController {
         env.storage()
             .instance()
             .set(&DataKey::BurnableUsdMicros, &next_burnable);
-        env.storage().instance().set(&evidence_key, &true);
+        Self::set_persistent_marker(&env, &evidence_key);
         Self::write_reserve(&env, &reserve);
         Self::write_liability(&env, &liability);
         env.events().publish(
