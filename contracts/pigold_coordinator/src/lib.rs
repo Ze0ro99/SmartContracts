@@ -120,7 +120,10 @@ impl PiGoldCoordinator {
         let pool_key = DataKey::Pool(pool_id.clone());
         env.storage().persistent().set(&pool_key, &record);
         Self::extend_persistent_ttl(&env, &pool_key);
-        Self::extend_persistent_ttl(&env, &DataKey::Reserve(record.reserve_accounting_id.clone()));
+        Self::extend_persistent_ttl(
+            &env,
+            &DataKey::Reserve(record.reserve_accounting_id.clone()),
+        );
         env.events().publish(
             (symbol_short!("pigold"), symbol_short!("pool_st")),
             (pool_id, enabled),
