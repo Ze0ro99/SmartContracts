@@ -1,8 +1,7 @@
 #![no_std]
 
 use soroban_sdk::{
-    contract, contracterror, contractimpl, contracttype, symbol_short, Address, BytesN, Env,
-    String,
+    contract, contracterror, contractimpl, contracttype, symbol_short, Address, BytesN, Env, String,
 };
 
 const MAX_PERIOD_AMOUNT: i128 = i128::MAX;
@@ -72,11 +71,7 @@ impl EconomicSettlement {
         Ok(())
     }
 
-    pub fn set_operator(
-        env: Env,
-        operator: Address,
-        enabled: bool,
-    ) -> Result<(), Error> {
+    pub fn set_operator(env: Env, operator: Address, enabled: bool) -> Result<(), Error> {
         let admin: Address = env
             .storage()
             .instance()
@@ -109,7 +104,11 @@ impl EconomicSettlement {
         if deductions > collected_revenue {
             return Err(Error::UnderfundedPeriod);
         }
-        if env.storage().persistent().has(&DataKey::Period(period_id.clone())) {
+        if env
+            .storage()
+            .persistent()
+            .has(&DataKey::Period(period_id.clone()))
+        {
             return Err(Error::DuplicatePeriod);
         }
         let distributable = collected_revenue
@@ -136,11 +135,7 @@ impl EconomicSettlement {
         Ok(distributable)
     }
 
-    pub fn approve_period(
-        env: Env,
-        approver: Address,
-        period_id: BytesN<32>,
-    ) -> Result<(), Error> {
+    pub fn approve_period(env: Env, approver: Address, period_id: BytesN<32>) -> Result<(), Error> {
         let admin: Address = env
             .storage()
             .instance()
@@ -158,7 +153,10 @@ impl EconomicSettlement {
         env.storage()
             .persistent()
             .set(&DataKey::Period(period_id.clone()), &period);
-        env.events().publish((symbol_short!("period"), symbol_short!("approved")), period_id);
+        env.events().publish(
+            (symbol_short!("period"), symbol_short!("approved")),
+            period_id,
+        );
         Ok(())
     }
 
@@ -190,7 +188,9 @@ impl EconomicSettlement {
             return Err(Error::AllocationExceedsBudget);
         }
         period.allocated_total = next_total;
-        env.storage().persistent().set(&key, &(amount, evidence_hash));
+        env.storage()
+            .persistent()
+            .set(&key, &(amount, evidence_hash));
         env.storage()
             .persistent()
             .set(&DataKey::Period(period_id.clone()), &period);
@@ -459,5 +459,4 @@ mod test {
             Err(Ok(Error::AlreadySettled))
         ));
     }
-
 }
