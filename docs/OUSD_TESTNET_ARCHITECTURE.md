@@ -41,7 +41,7 @@ This is useful evidence that the ecosystem already has multi-asset and pool-shar
 | Reconciliation & Event Indexer | Reconcile token supply, reserve liabilities, payouts, burns and ledger events | Invent missing events or silently repair mismatches |
 | Governance Registry | Approve roles, caps, supported reserve types, policy versions and upgrades | Allow one key to unilaterally attest, issue and pay |
 
-The existing reserve-liability controller is an accounting prototype. It is not the complete token, mint, burn, bank, or payment-rail implementation.
+The current source includes a test-only OUSD token and reserve/liability controller with allowlisted minting, beneficiary-approved escrow, and atomic token burn on payout-attestation finalization. This is an on-chain test workflow only: it does not custody USD, connect to a bank or payment rail, or independently prove off-chain reserve/payout evidence.
 
 ## 5. Reserve policy and eligible collateral
 
@@ -86,19 +86,18 @@ Core invariants:
 2. Independent reserve verifier checks custodian statement/API evidence and reconciliation.
 3. Reserve Registry records a unique reserve lot and verification metadata.
 4. Issuance Controller checks role separation, evidence freshness, limits, available reserve and idempotency.
-5. In one atomic contract transaction, allocate the reserve lot, create the beneficiary liability, and invoke the OUSD token mint adapter for the exact authorized amount.
+5. In one atomic Soroban transaction, allocate the reserve lot, create the beneficiary liability, and mint the exact authorized OUSD amount through the configured token contract. The controller must be explicitly allowlisted as a minter on that token.
 6. Reconcile minted atomic units against liability units and emit a verifiable issuance event.
 
-If atomic mint integration is not available, stop at an explicit `AUTHORIZED_NOT_MINTED` state. Never represent a controller record as minted OUSD.
+The current test implementation performs token minting and liability accounting in the same transaction; a failed token call must revert the whole invocation. Deployment readiness still requires readback of token supply, balances, contract IDs and code hashes.
 
 ### Redemption
-1. Beneficiary authenticates a redemption request.
-2. Controller moves the liability to `REDEMPTION_PENDING`.
-3. A payment operator executes payout outside chain.
-4. Independent payout verifier confirms exact amount, currency, beneficiary and final settlement.
-5. Controller records payout evidence and moves liability to `PAID_PENDING_BURN`.
-6. Burn Adapter burns/retire the exact associated OUSD atomically with the liability state transition where supported.
-7. Reconciliation confirms token supply reduction and closes the liability.
+1. Beneficiary authenticates a redemption request and approves the controller to transfer the exact token amount.
+2. The controller moves the liability to `REDEMPTION_PENDING` and escrows the approved OUSD.
+3. A payment operator executes payout outside the chain.
+4. An independent payout verifier attests the exact settled amount. The contract cannot inspect the bank or payment rail itself.
+5. In one atomic Soroban transaction, the controller burns the exact escrowed OUSD, updates reserve and outstanding-liability accounting, records payout evidence, and marks the liability `PAID`.
+6. Reconciliation independently confirms token supply reduction, reserve accounting, contract events and ledger state.
 
 If payout is pending, failed, reversed, partial, wrong-currency, or mismatched, the liability remains outstanding and no burn is authorized. Partial payouts require an explicit partial-redemption state machine; they must not be rounded or silently treated as full settlement.
 
@@ -163,14 +162,14 @@ The indexer should persist raw event identity, cursor/ledger checkpoint, decoded
 ## 12. Deployment gates
 
 No Testnet1 deployment or mint is authorized by this specification. Before deployment:
-1. implement and test the OUSD token adapter and atomic issuance/burn flow;
-2. complete persistent storage, TTL, migration and recovery design;
-3. finalize reserve/payout verifier governance and key custody;
-4. complete independent contract/security review and all negative-path tests;
-5. pin dependencies and pass locked Rust tests, WASM build, static analysis and secret scan;
-6. verify network ID, deployment identities, asset issuer and contract IDs from read-only Testnet1 queries;
-7. publish a deployment manifest and reconciliation dashboard;
-8. obtain explicit deployment/mint authorization for the exact Testnet1 contracts and amounts.
+1. complete independent contract/security review, including negative-path, role-separation, replay, TTL, archival and atomic rollback tests;
+2. finalize reserve/payout verifier governance, independent key custody and signer separation;
+3. pin dependencies and pass locked Rust tests, WASM build, static analysis and secret scan on the exact release commit;
+4. verify Pi Testnet 1 RPC health, network passphrase, deployment identities, contract IDs and WASM hashes using read-only queries;
+5. publish a versioned deployment manifest and reconciliation dashboard;
+6. obtain explicit authorization for the exact Testnet 1 deployment, administrator, issuer/verifier roles and mint limits;
+7. deploy only to Testnet 1, then read back contract identity, token supply, reserve/liability state and emitted events;
+8. keep all USD backing, peg and redemption claims disabled unless independently evidenced and legally/operationally approved.
 
 ## 13. Evidence labels
 
