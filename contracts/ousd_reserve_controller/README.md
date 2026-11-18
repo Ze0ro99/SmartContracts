@@ -35,3 +35,13 @@ cargo build -p ousd-reserve-controller --locked --release --target wasm32-unknow
 ```
 
 Do not deploy or connect this controller to a token issuer before independent security review, verifier governance, and a separate token-burn integration design are approved.
+
+
+## Storage and TTL policy
+
+- Small global configuration, roles and aggregate counters remain in instance storage.
+- Reserve records, liability records and evidence replay markers use persistent storage so record growth is not constrained by the contract-instance entry size.
+- Persistent records are renewed to the network maximum TTL whenever they are read or written.
+- Soroban persistent entries can expire into the Expired State Stack (ESS). Before a call that touches an expired record or replay marker, the transaction footprint must restore the required keys. A successful source test does not prove that a production operator has a working restoration process.
+- The application must maintain a record-to-key index and an operator runbook for restoring all related reserve, liability and evidence keys before invoking state transitions. Never treat a missing/unrestored evidence marker as proof that an evidence hash is unused.
+- This reference still does not implement OUSD token minting or an atomic token burn. The burnable aggregate is an accounting indicator only and must not be used as authorization to burn outside a separately reviewed atomic integration.
