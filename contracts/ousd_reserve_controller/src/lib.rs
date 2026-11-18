@@ -233,9 +233,6 @@ impl OusdReserveController {
         env.storage()
             .instance()
             .set(&DataKey::OutstandingUsdMicros, &0i128);
-        env.storage()
-            .instance()
-            .set(&DataKey::BurnableUsdMicros, &0i128);
         env.storage().instance().extend_ttl(Self::TTL_THRESHOLD, env.storage().max_ttl());
         env.events()
             .publish((symbol_short!("ousd"), symbol_short!("init")), admin);
@@ -322,8 +319,10 @@ impl OusdReserveController {
         let token_amount = amount_usd_micros.checked_mul(10).ok_or(Error::ArithmeticError)?;
         let token_address = Self::configured_token(&env)?;
         let token = OusdTokenClient::new(&env, &token_address);
-        token.mint(&env.current_contract_address(), &beneficiary, &token_amount)
-            .map_err(|_| Error::TokenOperationFailed)?;
+        match token.try_mint(&env.current_contract_address(), &beneficiary, &token_amount) {
+            Ok(Ok(())) => {}
+            _ => return Err(Error::TokenOperationFailed),
+        }
         let outstanding: i128 = env
             .storage()
             .instance()
@@ -393,12 +392,15 @@ impl OusdReserveController {
         let token_address = Self::configured_token(&env)?;
         let token = OusdTokenClient::new(&env, &token_address);
         let controller_address = env.current_contract_address();
-        token.transfer_from(
+        match token.try_transfer_from(
             &controller_address,
             &beneficiary,
             &controller_address,
             &record.token_amount,
-        ).map_err(|_| Error::TokenOperationFailed)?;
+        ) {
+            Ok(Ok(())) => {}
+            _ => return Err(Error::TokenOperationFailed),
+        }
         record.tokens_escrowed = true;
         record.state = LiabilityState::RedemptionPending;
         Self::write_liability(&env, &record);
@@ -436,8 +438,10 @@ impl OusdReserveController {
         }
         let token_address = Self::configured_token(&env)?;
         let token = OusdTokenClient::new(&env, &token_address);
-        token.burn(&env.current_contract_address(), &liability.token_amount)
-            .map_err(|_| Error::TokenOperationFailed)?;
+        match token.try_burn(&env.current_contract_address(), &liability.token_amount) {
+            Ok(Ok(())) => {}
+            _ => return Err(Error::TokenOperationFailed),
+        }
         liability.tokens_burned = true;
         let mut reserve = Self::read_reserve(&env, liability.reserve_id)?;
         reserve.allocated_usd_micros = reserve
@@ -462,9 +466,6 @@ impl OusdReserveController {
         env.storage()
             .instance()
             .set(&DataKey::OutstandingUsdMicros, &next_outstanding);
-        env.storage()
-            .instance()
-            .set(&DataKey::BurnableUsdMicros, &next_burnable);
         Self::set_persistent_marker(&env, &evidence_key);
         Self::write_reserve(&env, &reserve);
         Self::write_liability(&env, &liability);
