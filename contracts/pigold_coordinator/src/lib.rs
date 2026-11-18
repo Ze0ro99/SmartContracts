@@ -213,7 +213,7 @@ impl PiGoldCoordinator {
 
     fn load_pool(env: &Env, pool_id: &BytesN<32>) -> Result<PoolRecord, Error> {
         let pool_key = DataKey::Pool(pool_id.clone());
-        let record = env
+        let record: PoolRecord = env
             .storage()
             .persistent()
             .get(&pool_key)
