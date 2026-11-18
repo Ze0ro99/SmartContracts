@@ -1,7 +1,8 @@
 #![no_std]
 //! Test-only OUSD reserve/liability evidence controller.
-//! Records role-attested evidence; it does not custody USD, inspect bank accounts,
-//! prove off-chain documents, mint/burn OUSD, or execute payouts.
+//! Records role-attested evidence and coordinates test-token mint, escrow and burn.
+//! It does not custody USD, inspect bank accounts, prove off-chain documents,
+//! or execute/verify external USD payouts.
 
 use soroban_sdk::{
     contract, contractclient, contracterror, contractimpl, contracttype, symbol_short, Address,
