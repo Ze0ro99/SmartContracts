@@ -1,5 +1,5 @@
 [package]
-name = "economic-settlement"
+name = "pirc-economic-settlement"
 version = "0.1.0"
 edition = "2021"
 publish = false
