@@ -490,8 +490,8 @@ impl OusdReserveController {
             .get(&DataKey::OutstandingUsdMicros)
             .unwrap_or(0)
     }
-    /// Paid liabilities are eligible for a separate token-burn workflow; no token is burned here.
-    /// No burn backlog exists: tokens are escrowed on redemption request and burned atomically on payout confirmation.
+    /// Escrowed OUSD is burned atomically by confirm_settled_payout before a liability is marked Paid.
+    /// This compatibility query stays at zero because no deferred burn backlog is permitted.
     pub fn burnable_usd_micros(_env: Env) -> i128 {
         0
     }
