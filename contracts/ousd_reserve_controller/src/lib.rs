@@ -509,6 +509,8 @@ mod tests {
     use super::*;
     use soroban_sdk::{contract, contractimpl, contracttype, testutils::Address as _, Address, Env};
 
+    const MOCK_MAX_SUPPLY: i128 = 10_000_000_000_000_000;
+
     #[contracttype]
     #[derive(Clone)]
     enum MockTokenKey {
@@ -542,8 +544,13 @@ mod tests {
             if amount <= 0 { return Err(OusdTokenError::InvalidAmount); }
             let balance = env.storage().instance().get::<_, i128>(&MockTokenKey::Balance(to.clone())).unwrap_or(0);
             let supply = env.storage().instance().get::<_, i128>(&MockTokenKey::Supply).unwrap_or(0);
-            env.storage().instance().set(&MockTokenKey::Balance(to), &(balance + amount));
-            env.storage().instance().set(&MockTokenKey::Supply, &(supply + amount));
+            let next_balance = balance.checked_add(amount).ok_or(OusdTokenError::ArithmeticError)?;
+            let next_supply = supply.checked_add(amount).ok_or(OusdTokenError::ArithmeticError)?;
+            if next_supply > MOCK_MAX_SUPPLY {
+                return Err(OusdTokenError::SupplyCapExceeded);
+            }
+            env.storage().instance().set(&MockTokenKey::Balance(to), &next_balance);
+            env.storage().instance().set(&MockTokenKey::Supply, &next_supply);
             Ok(())
         }
 
