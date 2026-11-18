@@ -300,7 +300,11 @@ impl OusdTestToken {
             return Err(Error::InvalidAmount);
         }
         let key = DataKey::Allowance(from.clone(), spender.clone());
-        let mut value: AllowanceData = env.storage().persistent().get(&key).ok_or(Error::InsufficientAllowance)?;
+        let mut value: AllowanceData = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .ok_or(Error::InsufficientAllowance)?;
         if value.expiration_ledger < env.ledger().sequence() {
             return Err(Error::AllowanceExpired);
         }
@@ -311,7 +315,10 @@ impl OusdTestToken {
         if balance < amount {
             return Err(Error::InsufficientBalance);
         }
-        value.amount = value.amount.checked_sub(amount).ok_or(Error::ArithmeticError)?;
+        value.amount = value
+            .amount
+            .checked_sub(amount)
+            .ok_or(Error::ArithmeticError)?;
         let next_balance = balance.checked_sub(amount).ok_or(Error::ArithmeticError)?;
         let next_supply = Self::read_total_supply(&env)
             .checked_sub(amount)
@@ -321,7 +328,10 @@ impl OusdTestToken {
         storage.extend_ttl(&key, TTL_THRESHOLD, env.storage().max_ttl());
         Self::set_balance(&env, &from, next_balance);
         Self::set_total_supply(&env, next_supply);
-        env.events().publish((symbol_short!("ousd"), symbol_short!("burn")), (from, amount));
+        env.events().publish(
+            (symbol_short!("ousd"), symbol_short!("burn")),
+            (from, amount),
+        );
         Ok(())
     }
 
