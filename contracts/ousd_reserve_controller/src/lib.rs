@@ -522,4 +522,112 @@ mod tests {
                 .is_err()
         );
     }
+    #[test]
+    fn rejects_wrong_beneficiary_and_mismatched_or_repeated_payout() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(OusdReserveController, ());
+        let client = OusdReserveControllerClient::new(&env, &contract_id);
+        let admin = Address::generate(&env);
+        let issuer = Address::generate(&env);
+        let reserve_verifier = Address::generate(&env);
+        let payout_verifier = Address::generate(&env);
+        let beneficiary = Address::generate(&env);
+        let wrong_beneficiary = Address::generate(&env);
+        client.initialize(&admin, &issuer, &reserve_verifier, &payout_verifier);
+        let reserve_id = client.attest_settled_reserve(
+            &reserve_verifier, &BytesN::from_array(&env, &[21u8; 32]), &1_000_000,
+        );
+        let liability_id = client.issue_liability(
+            &issuer, &reserve_id, &beneficiary, &BytesN::from_array(&env, &[22u8; 32]), &400_000,
+        );
+
+        assert!(client.try_request_redemption(&wrong_beneficiary, &liability_id).is_err());
+        assert_eq!(client.get_liability(&liability_id).state, LiabilityState::Issued);
+
+        client.request_redemption(&beneficiary, &liability_id);
+        let payout_hash = BytesN::from_array(&env, &[23u8; 32]);
+        assert!(client.try_confirm_settled_payout(
+            &payout_verifier, &liability_id, &payout_hash, &399_999,
+        ).is_err());
+        assert_eq!(client.get_liability(&liability_id).state, LiabilityState::RedemptionPending);
+        assert_eq!(client.outstanding_usd_micros(), 400_000);
+        assert!(client.try_confirm_settled_payout(
+            &payout_verifier, &liability_id, &payout_hash, &400_000,
+        ).is_ok());
+        assert!(client.try_confirm_settled_payout(
+            &payout_verifier, &liability_id, &payout_hash, &400_000,
+        ).is_err());
+        assert_eq!(client.outstanding_usd_micros(), 0);
+        assert_eq!(client.burnable_usd_micros(), 400_000);
+    }
+
+    #[test]
+    fn rejects_wrong_roles_and_non_positive_amounts() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(OusdReserveController, ());
+        let client = OusdReserveControllerClient::new(&env, &contract_id);
+        let admin = Address::generate(&env);
+        let issuer = Address::generate(&env);
+        let reserve_verifier = Address::generate(&env);
+        let payout_verifier = Address::generate(&env);
+        let stranger = Address::generate(&env);
+        let beneficiary = Address::generate(&env);
+        client.initialize(&admin, &issuer, &reserve_verifier, &payout_verifier);
+
+        assert!(client.try_attest_settled_reserve(
+            &stranger, &BytesN::from_array(&env, &[31u8; 32]), &100,
+        ).is_err());
+        assert!(client.try_issue_liability(
+            &stranger, &1, &beneficiary, &BytesN::from_array(&env, &[32u8; 32]), &1,
+        ).is_err());
+        assert!(client.try_attest_settled_reserve(
+            &reserve_verifier, &BytesN::from_array(&env, &[33u8; 32]), &0,
+        ).is_err());
+        let reserve_id = client.attest_settled_reserve(
+            &reserve_verifier, &BytesN::from_array(&env, &[34u8; 32]), &100,
+        );
+        assert!(client.try_issue_liability(
+            &issuer, &reserve_id, &beneficiary, &BytesN::from_array(&env, &[35u8; 32]), &0,
+        ).is_err());
+    }
+
+    #[test]
+    fn insufficient_reserve_and_overflow_leave_accounting_unchanged() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(OusdReserveController, ());
+        let client = OusdReserveControllerClient::new(&env, &contract_id);
+        let admin = Address::generate(&env);
+        let issuer = Address::generate(&env);
+        let reserve_verifier = Address::generate(&env);
+        let payout_verifier = Address::generate(&env);
+        let beneficiary = Address::generate(&env);
+        client.initialize(&admin, &issuer, &reserve_verifier, &payout_verifier);
+
+        let small_reserve = client.attest_settled_reserve(
+            &reserve_verifier, &BytesN::from_array(&env, &[41u8; 32]), &10,
+        );
+        assert!(client.try_issue_liability(
+            &issuer, &small_reserve, &beneficiary, &BytesN::from_array(&env, &[42u8; 32]), &11,
+        ).is_err());
+        assert_eq!(client.get_reserve(&small_reserve).available_usd_micros, 10);
+
+        let max_reserve = client.attest_settled_reserve(
+            &reserve_verifier, &BytesN::from_array(&env, &[43u8; 32]), &i128::MAX,
+        );
+        client.issue_liability(
+            &issuer, &max_reserve, &beneficiary, &BytesN::from_array(&env, &[44u8; 32]), &i128::MAX,
+        );
+        let final_reserve = client.attest_settled_reserve(
+            &reserve_verifier, &BytesN::from_array(&env, &[45u8; 32]), &1,
+        );
+        assert!(client.try_issue_liability(
+            &issuer, &final_reserve, &beneficiary, &BytesN::from_array(&env, &[46u8; 32]), &1,
+        ).is_err());
+        assert_eq!(client.outstanding_usd_micros(), i128::MAX);
+        assert_eq!(client.get_reserve(&final_reserve).available_usd_micros, 1);
+    }
+
 }
