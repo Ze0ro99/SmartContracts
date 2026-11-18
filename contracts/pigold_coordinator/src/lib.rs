@@ -9,6 +9,7 @@ use soroban_sdk::{
 };
 
 const MAX_ROUTE_HOPS: u32 = 8;
+const TTL_THRESHOLD: u32 = 100_000;
 
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -26,6 +27,7 @@ pub enum Error {
     DuplicatePoolInRoute = 10,
     DuplicateReserveInRoute = 11,
     DisconnectedRoute = 12,
+    ReserveIndexMissing = 13,
 }
 
 #[contracttype]
@@ -52,11 +54,13 @@ pub struct PiGoldCoordinator;
 #[contractimpl]
 impl PiGoldCoordinator {
     pub fn initialize(env: Env, admin: Address) -> Result<(), Error> {
+        Self::extend_instance_ttl(&env);
         if env.storage().instance().has(&DataKey::Admin) {
             return Err(Error::AlreadyInitialized);
         }
         admin.require_auth();
         env.storage().instance().set(&DataKey::Admin, &admin);
+        Self::extend_instance_ttl(&env);
         Ok(())
     }
 
@@ -73,18 +77,15 @@ impl PiGoldCoordinator {
         if asset_a.len() == 0 || asset_b.len() == 0 || asset_a == asset_b {
             return Err(Error::InvalidAssetPair);
         }
-        if env
-            .storage()
-            .persistent()
-            .has(&DataKey::Pool(pool_id.clone()))
-        {
+        Self::extend_instance_ttl(&env);
+        let pool_key = DataKey::Pool(pool_id.clone());
+        if env.storage().persistent().has(&pool_key) {
+            Self::extend_persistent_ttl(&env, &pool_key);
             return Err(Error::PoolAlreadyRegistered);
         }
-        if env
-            .storage()
-            .persistent()
-            .has(&DataKey::Reserve(reserve_accounting_id.clone()))
-        {
+        let reserve_key = DataKey::Reserve(reserve_accounting_id.clone());
+        if env.storage().persistent().has(&reserve_key) {
+            Self::extend_persistent_ttl(&env, &reserve_key);
             return Err(Error::ReserveAlreadyAssigned);
         }
         let record = PoolRecord {
@@ -94,12 +95,10 @@ impl PiGoldCoordinator {
             reserve_accounting_id: reserve_accounting_id.clone(),
             enabled: true,
         };
-        env.storage()
-            .persistent()
-            .set(&DataKey::Pool(pool_id.clone()), &record);
-        env.storage()
-            .persistent()
-            .set(&DataKey::Reserve(reserve_accounting_id), &pool_id);
+        env.storage().persistent().set(&pool_key, &record);
+        env.storage().persistent().set(&reserve_key, &pool_id);
+        Self::extend_persistent_ttl(&env, &pool_key);
+        Self::extend_persistent_ttl(&env, &reserve_key);
         env.events().publish(
             (symbol_short!("pigold"), symbol_short!("pool_add")),
             pool_id,
@@ -114,12 +113,17 @@ impl PiGoldCoordinator {
         pool_id: BytesN<32>,
         enabled: bool,
     ) -> Result<(), Error> {
+        Self::extend_instance_ttl(&env);
         Self::require_admin(&env, &admin)?;
         let mut record = Self::load_pool(&env, &pool_id)?;
         record.enabled = enabled;
-        env.storage()
-            .persistent()
-            .set(&DataKey::Pool(pool_id.clone()), &record);
+        let pool_key = DataKey::Pool(pool_id.clone());
+        env.storage().persistent().set(&pool_key, &record);
+        Self::extend_persistent_ttl(&env, &pool_key);
+        Self::extend_persistent_ttl(
+            &env,
+            &DataKey::Reserve(record.reserve_accounting_id.clone()),
+        );
         env.events().publish(
             (symbol_short!("pigold"), symbol_short!("pool_st")),
             (pool_id, enabled),
@@ -127,9 +131,22 @@ impl PiGoldCoordinator {
         Ok(())
     }
 
-    /// Resolves a directed path through enabled pair pools and returns its output asset.
-    /// Every pool and reserve namespace may occur at most once in a route.
+    /// Resolves a directed path using the first pool's asset_a as the input.
+    /// Kept for compatibility; new callers should use validate_route_from.
     pub fn validate_route(env: Env, route: Vec<BytesN<32>>) -> Result<String, Error> {
+        let first_pool_id = route.get(0).ok_or(Error::InvalidRouteLength)?;
+        let first_pool = Self::load_pool(&env, &first_pool_id)?;
+        Self::validate_route_from(env, first_pool.asset_a, route)
+    }
+
+    /// Resolves a directed path from an explicit input asset.
+    /// Every pool and reserve namespace may occur at most once in a route.
+    pub fn validate_route_from(
+        env: Env,
+        asset_in: String,
+        route: Vec<BytesN<32>>,
+    ) -> Result<String, Error> {
+        Self::extend_instance_ttl(&env);
         let count = route.len();
         if count == 0 || count > MAX_ROUTE_HOPS {
             return Err(Error::InvalidRouteLength);
@@ -137,7 +154,7 @@ impl PiGoldCoordinator {
 
         let mut seen_pools: Vec<BytesN<32>> = Vec::new(&env);
         let mut seen_reserves: Vec<BytesN<32>> = Vec::new(&env);
-        let mut current_asset: Option<String> = None;
+        let mut current_asset = asset_in;
 
         for index in 0..count {
             let pool_id = route.get(index).ok_or(Error::PoolNotFound)?;
@@ -155,21 +172,36 @@ impl PiGoldCoordinator {
             }
             seen_reserves.push_back(record.reserve_accounting_id.clone());
 
-            current_asset = match current_asset {
-                None => Some(record.asset_b.clone()),
-                Some(previous) if previous == record.asset_a => Some(record.asset_b.clone()),
-                Some(previous) if previous == record.asset_b => Some(record.asset_a.clone()),
-                Some(_) => return Err(Error::DisconnectedRoute),
+            current_asset = if current_asset == record.asset_a {
+                record.asset_b
+            } else if current_asset == record.asset_b {
+                record.asset_a
+            } else {
+                return Err(Error::DisconnectedRoute);
             };
         }
-        current_asset.ok_or(Error::InvalidRouteLength)
+        Ok(current_asset)
     }
 
     pub fn get_pool(env: Env, pool_id: BytesN<32>) -> Result<PoolRecord, Error> {
+        Self::extend_instance_ttl(&env);
         Self::load_pool(&env, &pool_id)
     }
 
+    fn extend_instance_ttl(env: &Env) {
+        env.storage()
+            .instance()
+            .extend_ttl(TTL_THRESHOLD, env.storage().max_ttl());
+    }
+
+    fn extend_persistent_ttl(env: &Env, key: &DataKey) {
+        env.storage()
+            .persistent()
+            .extend_ttl(key, TTL_THRESHOLD, env.storage().max_ttl());
+    }
+
     fn require_admin(env: &Env, admin: &Address) -> Result<(), Error> {
+        Self::extend_instance_ttl(env);
         let stored: Address = env
             .storage()
             .instance()
@@ -183,10 +215,20 @@ impl PiGoldCoordinator {
     }
 
     fn load_pool(env: &Env, pool_id: &BytesN<32>) -> Result<PoolRecord, Error> {
-        env.storage()
+        let pool_key = DataKey::Pool(pool_id.clone());
+        let record: PoolRecord = env
+            .storage()
             .persistent()
-            .get(&DataKey::Pool(pool_id.clone()))
-            .ok_or(Error::PoolNotFound)
+            .get(&pool_key)
+            .ok_or(Error::PoolNotFound)?;
+        Self::extend_persistent_ttl(env, &pool_key);
+
+        let reserve_key = DataKey::Reserve(record.reserve_accounting_id.clone());
+        if !env.storage().persistent().has(&reserve_key) {
+            return Err(Error::ReserveIndexMissing);
+        }
+        Self::extend_persistent_ttl(env, &reserve_key);
+        Ok(record)
     }
 }
 
@@ -283,6 +325,38 @@ mod test {
         );
         assert_eq!(
             client.try_validate_route(&Vec::from_array(&env, [pool, disconnected])),
+            Err(Ok(Error::DisconnectedRoute)),
+        );
+    }
+
+    #[test]
+    fn validates_reverse_route_from_explicit_input_and_rejects_unknown_input() {
+        let env = Env::default();
+        let (id, admin) = setup(&env);
+        let client = PiGoldCoordinatorClient::new(&env, &id);
+        let pool_ab = BytesN::from_array(&env, &[21u8; 32]);
+        let pool_bc = BytesN::from_array(&env, &[22u8; 32]);
+        client.register_pool(
+            &admin,
+            &pool_ab,
+            &String::from_str(&env, "PiCash"),
+            &String::from_str(&env, "PiBank"),
+            &BytesN::from_array(&env, &[31u8; 32]),
+        );
+        client.register_pool(
+            &admin,
+            &pool_bc,
+            &String::from_str(&env, "PiBank"),
+            &String::from_str(&env, "PiYellow"),
+            &BytesN::from_array(&env, &[32u8; 32]),
+        );
+        let reverse_route = Vec::from_array(&env, [pool_bc, pool_ab]);
+        assert_eq!(
+            client.validate_route_from(&String::from_str(&env, "PiYellow"), &reverse_route),
+            String::from_str(&env, "PiCash")
+        );
+        assert_eq!(
+            client.try_validate_route_from(&String::from_str(&env, "PiGold"), &reverse_route),
             Err(Ok(Error::DisconnectedRoute)),
         );
     }
