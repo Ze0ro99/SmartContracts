@@ -490,6 +490,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "economic-settlement"
+version = "0.1.0"
+dependencies = [
+ "soroban-sdk",
+]
+
+[[package]]
 name = "ed25519"
 version = "2.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
