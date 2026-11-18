@@ -7,6 +7,7 @@ use soroban_sdk::{
 };
 
 const DECIMALS: u32 = 7;
+const TTL_THRESHOLD: u32 = 100_000;
 const MAX_SUPPLY: i128 = 10_000_000_000_000_000; // 1,000,000,000 tokens at 7 decimals
 
 #[contracterror]
@@ -46,6 +47,7 @@ pub struct OusdTestToken;
 
 impl OusdTestToken {
     fn require_initialized(env: &Env) -> Result<Address, Error> {
+        env.storage().instance().extend_ttl(TTL_THRESHOLD, env.storage().max_ttl());
         env.storage()
             .instance()
             .get(&DataKey::Admin)
@@ -62,16 +64,20 @@ impl OusdTestToken {
     }
 
     fn balance_of(env: &Env, owner: &Address) -> i128 {
-        env.storage()
-            .persistent()
-            .get(&DataKey::Balance(owner.clone()))
-            .unwrap_or(0)
+        let key = DataKey::Balance(owner.clone());
+        let storage = env.storage().persistent();
+        let balance = storage.get(&key).unwrap_or(0);
+        if storage.has(&key) {
+            storage.extend_ttl(&key, TTL_THRESHOLD, env.storage().max_ttl());
+        }
+        balance
     }
 
     fn set_balance(env: &Env, owner: &Address, amount: i128) {
-        env.storage()
-            .persistent()
-            .set(&DataKey::Balance(owner.clone()), &amount);
+        let key = DataKey::Balance(owner.clone());
+        let storage = env.storage().persistent();
+        storage.set(&key, &amount);
+        storage.extend_ttl(&key, TTL_THRESHOLD, env.storage().max_ttl());
     }
 
     fn read_total_supply(env: &Env) -> i128 {
@@ -117,6 +123,7 @@ impl OusdTestToken {
             return Err(Error::AlreadyInitialized);
         }
         env.storage().instance().set(&DataKey::Admin, &admin);
+        env.storage().instance().extend_ttl(TTL_THRESHOLD, env.storage().max_ttl());
         Self::set_total_supply(&env, 0);
         env.events().publish((symbol_short!("ousd"), symbol_short!("init")), admin);
         Ok(())
@@ -162,10 +169,10 @@ impl OusdTestToken {
             return Err(Error::InvalidExpiration);
         }
         let value = AllowanceData { amount, expiration_ledger };
-        env.storage().persistent().set(
-            &DataKey::Allowance(from.clone(), spender.clone()),
-            &value,
-        );
+        let allowance_key = DataKey::Allowance(from.clone(), spender.clone());
+        let allowance_storage = env.storage().persistent();
+        allowance_storage.set(&allowance_key, &value);
+        allowance_storage.extend_ttl(&allowance_key, TTL_THRESHOLD, env.storage().max_ttl());
         env.events().publish(
             (symbol_short!("ousd"), symbol_short!("approve")),
             (from, spender, amount, expiration_ledger),
@@ -174,9 +181,12 @@ impl OusdTestToken {
     }
 
     pub fn allowance(env: Env, from: Address, spender: Address) -> i128 {
-        let value: Option<AllowanceData> = env.storage().persistent().get(
-            &DataKey::Allowance(from, spender),
-        );
+        let key = DataKey::Allowance(from, spender);
+        let storage = env.storage().persistent();
+        let value: Option<AllowanceData> = storage.get(&key);
+        if value.is_some() {
+            storage.extend_ttl(&key, TTL_THRESHOLD, env.storage().max_ttl());
+        }
         match value {
             Some(item) if item.expiration_ledger >= env.ledger().sequence() => item.amount,
             _ => 0,
@@ -205,7 +215,9 @@ impl OusdTestToken {
         }
         Self::move_balance(&env, &from, &to, amount)?;
         value.amount = value.amount.checked_sub(amount).ok_or(Error::ArithmeticError)?;
-        env.storage().persistent().set(&key, &value);
+        let storage = env.storage().persistent();
+        storage.set(&key, &value);
+        storage.extend_ttl(&key, TTL_THRESHOLD, env.storage().max_ttl());
         Ok(())
     }
 
