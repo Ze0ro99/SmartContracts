@@ -5,7 +5,8 @@ This crate is a test-only Soroban token reference for exercising the PiRC asset 
 ## Interface
 
 - `initialize(admin)`
-- `mint(admin, to, amount)` — admin-only, fixed supply cap
+- `set_minter(admin, minter, enabled)` — admin-controlled minter allowlist
+- `mint(minter, to, amount)` — authorized-minter-only, fixed supply cap
 - `transfer(from, to, amount)`
 - `approve(from, spender, amount, expiration_ledger)`
 - `allowance(from, spender)`
@@ -25,4 +26,4 @@ cargo build --manifest-path contracts/ousd_test_token/Cargo.toml --target wasm32
 
 ## Deployment boundary
 
-No contract ID is published because this crate is not deployed. Do not use a production admin key. Deployment is permitted only on an explicitly selected test network after the build, interface, authorization and readback checks pass. Minting is admin-controlled. No redemption, reserves, price oracle or USD parity mechanism is implemented.
+No contract ID is published because this crate is not deployed. Do not use a production admin key. Deployment is permitted only on an explicitly selected test network after the build, interface, authorization and readback checks pass. Minting is restricted to addresses explicitly enabled by the admin; the reserve controller is expected to be the only production-path minter in the test deployment. The admin must configure the controller address as a minter. The controller escrows approved tokens and calls burn after a separate payout attestation. No USD custody, bank verification, price oracle or USD parity mechanism is implemented.
